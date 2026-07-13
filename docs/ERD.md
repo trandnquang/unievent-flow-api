@@ -7,6 +7,8 @@ erDiagram
         varchar password_hash
         varchar role "student | organizer"
         boolean is_active
+        varchar reset_token
+        timestamp reset_token_expires
         timestamp created_at
         timestamp updated_at
     }

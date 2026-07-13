@@ -1,81 +1,141 @@
-# UniEvent Flow API
+# UniEvent Flow API — Hệ thống Đặt lịch Sự kiện & Check-in Học đường
 
-Nền tảng backend xử lý sự kiện học đường, tích hợp cơ chế chống bán vượt vé (oversell) qua Redis, xác thực QR/JWT tốc độ cao và phân tích cảm xúc phản hồi bằng AI.
+> **Đồ án tốt nghiệp** — Giai đoạn Tuần 1–2 (MVP Core Services: Authentication, User Profile & Event Management).
 
-## 1. Kiến trúc Hệ thống (Bullet-proof Architecture)
+UniEvent Flow API là hệ thống backend cung cấp các dịch vụ quản lý sự kiện học đường, phân quyền theo vai trò (`student` và `organizer`), đăng ký sự kiện và kiểm tra vé vào cổng.
 
-Hệ thống được thiết kế theo mô hình 3 lớp (3-tier) với trọng tâm là hiệu năng và khả năng chịu tải đột biến:
-- **Ngôn ngữ & Framework:** Node.js, Express, TypeScript.
-- **Cơ sở dữ liệu chính:** PostgreSQL (lưu trữ bền vững Event, Registration, Ticket, Feedback, CheckinLog).
-- **Bộ đệm & Hàng đợi:** Redis + BullMQ (xử lý atomic decrement chống oversell, hàng đợi cấp vé và gửi email).
-- **Tích hợp AI:** LLM API (Gemini/OpenAI) cho Prompt Engineering phân tích cảm xúc.
+---
 
-## 2. Các Quyết định Thiết kế (Architecture Decision Records)
+## 🛠 Công nghệ Sử dụng
 
-| Vấn đề | Giải pháp thông thường | Giải pháp áp dụng tại UniEvent Flow | Lợi ích / Lý do |
-| :--- | :--- | :--- | :--- |
-| **Chống bán vượt (Oversell)** | Dùng Transaction/Row Lock trên PostgreSQL | **Redis Atomic Decrement + TTL** | Loại bỏ thắt cổ chai I/O, thời gian phản hồi tính bằng mili-giây, bảo vệ DB khỏi bão request. |
-| **Xử lý đăng ký vé** | Ghi DB & Gửi Email đồng bộ trên luồng chính | **Hàng đợi bất đồng bộ (BullMQ)** | Tách bạch luồng tiếp nhận và luồng xử lý; server không bị treo khi bên thứ 3 (Email) phản hồi chậm. |
-| **Xác thực Check-in** | Quét QR -> Query CSDL kiểm tra trạng thái vé | **Mã hoá vé bằng JWT, xác thực Stateless** | Phản hồi < 1 giây. Backend chỉ cần giải mã JWT bằng Secret Key để xác thực hợp lệ, sau đó đẩy tác vụ ghi log check-in vào background. |
+- **Runtime**: Node.js v20+
+- **Framework**: Express 5 (TypeScript 5.8+)
+- **ORM / Database layer**: Prisma 7 (`@prisma/client` + `@prisma/adapter-pg`) kết nối **PostgreSQL**
+- **Validation**: Zod v4 (nghiêm ngặt `exactOptionalPropertyTypes`)
+- **Authentication & Security**: JSON Web Token (`jsonwebtoken`), Bcrypt (`bcrypt`), Rate Limiting (`express-rate-limit`)
 
-## 3. Hướng dẫn Cài đặt & Khởi chạy (Bullet-proof Setup)
+---
 
-Dự án áp dụng tiêu chuẩn **"Infrastructure as Code"** và **"Deterministic Dependency"** để đảm bảo môi trường phát triển đồng nhất 100% giữa các thành viên, triệt tiêu lỗi "chạy được trên máy tôi nhưng lỗi trên máy khác". 
+## 📦 Hướng dẫn Cài đặt & Chạy Dự án
 
-Không cần cập nhật README.md khi thêm thư viện mới. Toàn bộ phiên bản đã được khoá cứng (lock).
-
-### Yêu cầu tiên quyết
-- **Node.js** (v18.x hoặc cao hơn)
-- **Docker & Docker Compose** (Bắt buộc dùng để giả lập môi trường hạ tầng local)
-- Git
-
-### Các bước khởi chạy (Zero-Friction)
-
-**Bước 1: Khởi tạo biến môi trường**
-Sao chép file cấu hình mẫu và điền các thông tin bảo mật (Secret keys, LLM API keys không được commit lên Git).
+### 1. Chuẩn bị môi trường (`.env`)
+Sao chép file mẫu cấu hình môi trường:
 ```bash
 cp .env.example .env
 ```
 
-**Bước 2: Khởi động Hạ tầng (Cơ sở dữ liệu & Cache)**
-Sử dụng Docker để tự động tải và chạy PostgreSQL, Redis mà không cần cài đặt cục bộ.
-```bash
-docker-compose up -d
+Nội dung các biến môi trường chính trong `.env`:
+```ini
+PORT=3000
+DATABASE_URL="postgresql://postgres:postgres@localhost:5432/unievent?schema=public"
+JWT_SECRET="unievent-flow-super-secret-key-2026"
+JWT_EXPIRES_IN="2h"
+REDIS_URL="redis://localhost:6379"
 ```
 
-**Bước 3: Cài đặt Thư viện chặt chẽ (Deterministic Install)**
-**KHÔNG dùng `npm install`**. Sử dụng lệnh sau để cài đặt chính xác các phiên bản đã được chốt trong `package-lock.json`, bỏ qua việc tự động cập nhật phiên bản phụ.
+### 2. Cài đặt Dependencies & Sinh Prisma Client
 ```bash
-npm ci
-```
-*Ghi chú: Bất kỳ thư viện nào mới được thêm vào (qua `npm install <package>`) sẽ tự động cập nhật `package.json` và `package-lock.json`. Người clone repo chỉ cần chạy lại `npm ci` là đồng bộ, không cần sửa đổi tài liệu.*
-
-**Bước 4: Chạy Migration CSDL**
-Áp dụng lược đồ (Schema) vào PostgreSQL theo ERD đã thiết kế.
-```bash
-npm run db:migrate
+npm install
+npx prisma generate
 ```
 
-**Bước 5: Khởi động API Server**
+### 3. Kiểm tra kiểu tĩnh TypeScript
+Kiểm duyệt toàn bộ mã nguồn không phát sinh lỗi kiểu dữ liệu:
 ```bash
-npm run dev
+npx tsc --noEmit
 ```
-Server sẽ chạy tại `http://localhost:3000`. Cấu hình Swagger/Postman tại `/api-docs`.
 
-## 4. Quy ước Phát triển (Development Workflow)
-- **Phân tách luồng:** Front-end và Back-end phải thống nhất API Contract (Định dạng Request/Response JSON) trước khi code.
-- **Bảo mật:** Không bao giờ log plaintext password. Toàn bộ mật khẩu phải qua `bcrypt`. Secret key của JWT phải có độ phức tạp cao.
-- **Xử lý lỗi:** Mọi Route/Controller phải được bọc trong bộ bắt lỗi (Error Handler) trung tâm để trả về mã HTTP chuẩn xác (400, 401, 403, 404, 500) kèm JSON message rõ ràng, không làm crash node process.
+### 4. Khởi chạy Server ở chế độ Phát triển (Development)
+Dùng `ts-node-dev` để chạy trực tiếp TypeScript và tự động nạp lại khi sửa code:
+```bash
+npx ts-node-dev --respawn --transpile-only src/server.ts
+```
+> Hoặc biên dịch ra JavaScript production:
+> ```bash
+> npx tsc
+> node dist/server.js
+> ```
 
-## 5. Cấu trúc Thư mục (Project Structure)
+---
+
+## 🏛 Cấu trúc Thư mục Dự án
+
 ```text
 src/
-├── config/           # Cấu hình môi trường, Database, Redis, LLM
-├── controllers/      # Tiếp nhận Request, gọi Services, trả Response
-├── services/         # Chứa Business Logic (Oversell, QR, AI Logic)
-├── models/           # Định nghĩa Schema/Entities cho PostgreSQL (Prisma/TypeORM)
-├── queues/           # Định nghĩa Worker & Processors cho BullMQ
-├── middlewares/      # Interceptors (Auth JWT, Rate Limiting, Error Handler)
-├── routes/           # Định tuyến API endpoints
-└── utils/            # Hàm hỗ trợ tiện ích (JWT generator, Hash, Logger)
+├── config/
+│   ├── env.ts              # Kiểm tra & chuẩn hóa biến môi trường bằng Zod
+│   └── db.ts               # Singleton PrismaClient với driver adapter PrismaPg
+├── schemas/
+│   ├── auth.schema.ts      # Zod validation schemas cho Auth & Profile (FR-01 → FR-07)
+│   └── event.schema.ts     # Zod validation schemas cho Event (FR-08 → FR-13)
+├── middlewares/
+│   ├── auth.middleware.ts  # requireAuth (JWT), requireRole, requireOwnership
+│   ├── error.middleware.ts # errorHandler chuẩn hóa envelope response API.md §1.2
+│   └── rateLimiter.middleware.ts # loginRateLimiter cho POST /auth/login
+├── services/
+│   ├── auth.service.ts     # Nghiệp vụ đăng ký, đăng nhập, khôi phục mật khẩu
+│   ├── user.service.ts     # Nghiệp vụ tra cứu và cập nhật hồ sơ cá nhân
+│   └── event.service.ts    # Nghiệp vụ quản lý sự kiện & đối soát vé
+├── controllers/
+│   ├── auth.controller.ts  # Controller xử lý request/response Auth
+│   ├── user.controller.ts  # Controller xử lý request/response User
+│   └── event.controller.ts # Controller xử lý request/response Event
+├── routes/
+│   ├── auth.routes.ts      # Router /api/v1/auth
+│   ├── user.routes.ts      # Router /api/v1/users
+│   ├── event.routes.ts     # Router /api/v1/events
+│   └── index.ts            # Tổng hợp API v1
+├── utils/
+│   ├── errors.ts           # AppError chuẩn hóa mã lỗi nghiệp vụ
+│   └── user.ts             # sanitizeUser loại bỏ trường bảo mật (password_hash, token)
+├── app.ts                  # Cấu hình Express application & middlewares
+└── server.ts               # Khởi động máy chủ & Graceful Shutdown
 ```
+
+---
+
+## 🚀 Danh sách Endpoints Đã Hoàn thành (Tuần 1–2 Scope)
+
+Toàn bộ phản hồi API tuân thủ envelope chuẩn:
+```json
+{
+  "success": true,
+  "data": { ... },
+  "meta": { ... } // (tùy chọn với phân trang)
+}
+```
+
+### 1. Dịch vụ Hệ thống
+| Method | Endpoint | Mô tả | Quyền |
+| :--- | :--- | :--- | :--- |
+| **GET** | `/health` | Kiểm tra tình trạng hoạt động (Health Check) | Public |
+
+### 2. Nhóm Authentication & Tài khoản (FR-01 → FR-07)
+| Method | Endpoint | FR | Mô tả | Quyền |
+| :--- | :--- | :--- | :--- | :--- |
+| **POST** | `/api/v1/auth/register` | FR-01 | Đăng ký tài khoản (`student` hoặc `organizer`) | Public |
+| **POST** | `/api/v1/auth/login` | FR-02 | Đăng nhập bằng Email/Password nhận Access Token | Public (`RateLimit`) |
+| **POST** | `/api/v1/auth/logout` | FR-03 | Đăng xuất tài khoản | Bearer JWT |
+| **POST** | `/api/v1/auth/forgot-password` | FR-07 | Yêu cầu gửi link/token khôi phục mật khẩu | Public |
+| **POST** | `/api/v1/auth/reset-password` | FR-07 | Đặt lại mật khẩu mới bằng `reset_token` | Public |
+| **POST** | `/api/v1/auth/change-password` | FR-04 | Đổi mật khẩu khi đang đăng nhập | Bearer JWT |
+| **GET** | `/api/v1/users/me` | FR-05 | Xem thông tin hồ sơ cá nhân | Bearer JWT |
+| **PATCH** | `/api/v1/users/me` | FR-06 | Cập nhật thông tin cá nhân (`name`) | Bearer JWT |
+
+### 3. Nhóm Quản lý Sự kiện (FR-08 → FR-13)
+| Method | Endpoint | FR | Mô tả | Quyền |
+| :--- | :--- | :--- | :--- | :--- |
+| **GET** | `/api/v1/events` | FR-13 | Lọc, tìm kiếm từ khóa, phân trang danh sách sự kiện | Public |
+| **GET** | `/api/v1/events/mine` | FR-12 | Danh sách sự kiện do chính Organizer tạo | Organizer |
+| **POST** | `/api/v1/events` | FR-08 | Tạo sự kiện mới | Organizer |
+| **GET** | `/api/v1/events/:eventId` | FR-09 | Xem chi tiết sự kiện & số vé còn lại | Public |
+| **PATCH** | `/api/v1/events/:eventId` | FR-10 | Cập nhật thông tin sự kiện | Organizer + Owner |
+| **POST** | `/api/v1/events/:eventId/cancel` | FR-11 | Hủy sự kiện (không cho phép nếu đã bắt đầu) | Organizer + Owner |
+
+---
+
+## 📌 Lộ trình Kỹ thuật & TODO (Tuần 3–6)
+
+- **Redis Rate Limiting**: Chuyển middleware `loginRateLimiter` từ in-memory sang Redis store theo đúng `API.md` mục 1.6.
+- **Quản lý tồn kho vé (Ticket Counter)**: Chuyển đối soát `ticketsRemaining` từ view SQL (`v_event_registration_stats`) sang bộ đếm nguyên tử (Atomic Counter) trên Redis theo SRS §5.2.
+- **Hàng đợi tác vụ bất đồng bộ**: Tích hợp BullMQ worker để gửi email đặt lại mật khẩu và thông báo sự kiện.
