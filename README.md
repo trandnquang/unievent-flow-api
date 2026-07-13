@@ -27,7 +27,7 @@ cp .env.example .env
 Nội dung các biến môi trường chính trong `.env`:
 ```ini
 PORT=3000
-DATABASE_URL="postgresql://postgres:postgres@localhost:5432/unievent?schema=public"
+DATABASE_URL="postgresql://root:1234@localhost:5432/unievent_flow?schema=public"
 JWT_SECRET="unievent-flow-super-secret-key-2026"
 JWT_EXPIRES_IN="2h"
 REDIS_URL="redis://localhost:6379"
@@ -46,16 +46,19 @@ npx tsc --noEmit
 ```
 
 ### 4. Khởi chạy Server ở chế độ Phát triển (Development)
-Dùng `ts-node-dev` để chạy trực tiếp TypeScript và tự động nạp lại khi sửa code:
-```bash
-npx ts-node-dev --respawn --transpile-only src/server.ts
-```
-> Hoặc biên dịch ra JavaScript production:
-> ```bash
-> npx tsc
-> node dist/server.js
-> ```
+Sử dụng script đã được tối ưu hóa với engine tsx (esbuild) để biên dịch on-the-fly và hỗ trợ Hot-Reloading:
 
+```bash
+npm run dev
+```
+### **Môi trường Production:**
+
+Để kiểm thử hoặc triển khai môi trường thực tế không có Hot-Reloading, sử dụng chuỗi lệnh sau:
+
+```bash
+npm run build
+npm run start
+```
 ---
 
 ## 🏛 Cấu trúc Thư mục Dự án
