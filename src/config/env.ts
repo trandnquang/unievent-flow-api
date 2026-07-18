@@ -9,6 +9,8 @@ const envSchema = z.object({
   JWT_EXPIRES_IN: z.string().default('2h'),
   // Redis chưa tích hợp trong Tuần 1-2, placeholder theo API.md
   REDIS_URL: z.string().default('redis://localhost:6379'),
+  // BR-03: chuỗi tĩnh dùng để xác thực đăng ký role=organizer (FR-01)
+  ORGANIZER_CODE: z.string().min(1, 'ORGANIZER_CODE là bắt buộc'),
 });
 
 const parsed = envSchema.safeParse(process.env);

@@ -40,6 +40,38 @@ export const requireAuth = (
   }
 };
 
+// Middleware re-check is_active trực tiếp từ CSDL cho mỗi request (API.md mục 1.4) -
+// KHÔNG tin giá trị is_active tại thời điểm JWT được cấp, vì access token còn hiệu lực
+// tới 2h sau khi Quản trị viên đã vô hiệu hoá tài khoản (BR-08, FR-29)
+export const requireActive = async (
+  req: Request,
+  _res: Response,
+  next: NextFunction
+): Promise<void> => {
+  try {
+    if (!req.user) {
+      throw new AppError(401, 'UNAUTHORIZED', 'Vui lòng đăng nhập');
+    }
+
+    const user = await prisma.users.findUnique({
+      where: { id: req.user.id },
+      select: { is_active: true },
+    });
+
+    if (!user || !user.is_active) {
+      throw new AppError(
+        403,
+        'ACCOUNT_DISABLED',
+        'Tài khoản của bạn đã bị vô hiệu hoá. Vui lòng liên hệ quản trị viên.'
+      );
+    }
+
+    next();
+  } catch (error) {
+    next(error);
+  }
+};
+
 // Middleware kiểm tra vai trò người dùng (vd: requireRole('organizer'))
 export const requireRole = (...allowedRoles: $Enums.user_role[]) => {
   return (req: Request, _res: Response, next: NextFunction): void => {

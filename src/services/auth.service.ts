@@ -29,6 +29,15 @@ export class AuthService {
       );
     }
 
+    // BR-03: role=organizer bắt buộc organizerCode khớp với biến môi trường ORGANIZER_CODE
+    if (input.role === 'organizer' && input.organizer_code !== env.ORGANIZER_CODE) {
+      throw new AppError(
+        422,
+        'INVALID_ORGANIZER_CODE',
+        'Mã đăng ký Ban tổ chức không hợp lệ.'
+      );
+    }
+
     // Băm mật khẩu bằng bcrypt (NFR-08)
     const passwordHash = await bcrypt.hash(input.password, 10);
 
@@ -55,7 +64,9 @@ export class AuthService {
       where: { email: input.email },
     });
 
-    if (!user || !user.is_active) {
+    // BR-07: gộp chung lỗi "email không tồn tại" và "sai mật khẩu" thành 1 thông
+    // báo, không tiết lộ email nào đã đăng ký trong hệ thống
+    if (!user) {
       throw new AppError(
         401,
         'INVALID_CREDENTIALS',
@@ -73,6 +84,16 @@ export class AuthService {
         401,
         'INVALID_CREDENTIALS',
         'Email hoặc mật khẩu không chính xác'
+      );
+    }
+
+    // BR-08: mật khẩu đúng nhưng tài khoản đã bị Quản trị viên vô hiệu hoá (FR-29)
+    // -> từ chối đăng nhập, tách riêng mã lỗi khỏi INVALID_CREDENTIALS
+    if (!user.is_active) {
+      throw new AppError(
+        403,
+        'ACCOUNT_DISABLED',
+        'Tài khoản của bạn đã bị vô hiệu hoá. Vui lòng liên hệ quản trị viên.'
       );
     }
 
@@ -102,7 +123,7 @@ export class AuthService {
     // Luôn xử lý thành công không tiết lộ email có tồn tại hay không (chống dò tài khoản)
     if (user && user.is_active) {
       const resetToken = crypto.randomBytes(32).toString('hex');
-      const resetTokenExpires = new Date(Date.now() + 15 * 60 * 1000); // Hạn 15 phút
+      const resetTokenExpires = new Date(Date.now() + 20 * 60 * 1000); // BR-22: hạn 20 phút
 
       await prisma.users.update({
         where: { id: user.id },

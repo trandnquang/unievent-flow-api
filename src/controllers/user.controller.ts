@@ -48,4 +48,28 @@ export class UserController {
       next(error);
     }
   }
+
+  // Hồ sơ công khai Ban tổ chức (GET /organizers/:userId - FR-33, Public)
+  public static async getOrganizerProfile(
+    req: Request,
+    res: Response,
+    next: NextFunction
+  ): Promise<void> {
+    try {
+      const rawUserId = req.params.userId;
+      const userId = Array.isArray(rawUserId) ? rawUserId[0] : rawUserId;
+      if (!userId) {
+        throw new AppError(400, 'BAD_REQUEST', 'Thiếu tham số userId');
+      }
+
+      const result = await UserService.getOrganizerProfile(userId);
+
+      res.status(200).json({
+        success: true,
+        data: result,
+      });
+    } catch (error) {
+      next(error);
+    }
+  }
 }

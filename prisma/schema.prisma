@@ -10,12 +10,13 @@ datasource db {
 
 /// This model or at least one of its fields has comments in the database, and requires an additional setup for migrations: Read more: https://pris.ly/d/database-comments
 model checkin_logs {
-  id           String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
-  ticket_id    String   @unique @db.Uuid
-  organizer_id String   @db.Uuid
-  checkin_time DateTime @default(now()) @db.Timestamptz(6)
-  users        users    @relation(fields: [organizer_id], references: [id], onUpdate: NoAction)
-  tickets      tickets  @relation(fields: [ticket_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  id             String         @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  ticket_id      String         @unique @db.Uuid
+  organizer_id   String?        @db.Uuid
+  checkin_method checkin_method @default(qr_scan)
+  checkin_time   DateTime       @default(now()) @db.Timestamptz(6)
+  users          users?         @relation(fields: [organizer_id], references: [id], onDelete: Restrict, onUpdate: NoAction)
+  tickets        tickets        @relation(fields: [ticket_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
 
   @@index([checkin_time], map: "idx_checkin_logs_checkin_time")
   @@index([organizer_id], map: "idx_checkin_logs_organizer_id")
@@ -24,23 +25,28 @@ model checkin_logs {
 /// This table contains check constraints and requires additional setup for migrations. Visit https://pris.ly/d/check-constraints for more info.
 /// This model or at least one of its fields has comments in the database, and requires an additional setup for migrations: Read more: https://pris.ly/d/database-comments
 model events {
-  id            String          @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
-  organizer_id  String          @db.Uuid
-  title         String          @db.VarChar(255)
-  description   String?
-  cover_image   String?         @db.VarChar(500)
-  location      String?         @db.VarChar(255)
-  category      String?         @db.VarChar(100)
-  club_name     String?         @db.VarChar(150)
-  start_time    DateTime        @db.Timestamptz(6)
-  end_time      DateTime        @db.Timestamptz(6)
-  max_tickets   Int
-  status        event_status    @default(active)
-  created_at    DateTime        @default(now()) @db.Timestamptz(6)
-  updated_at    DateTime        @default(now()) @db.Timestamptz(6)
-  users         users           @relation(fields: [organizer_id], references: [id], onUpdate: NoAction)
-  feedbacks     feedbacks[]
-  registrations registrations[]
+  id             String              @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  organizer_id   String              @db.Uuid
+  title          String              @db.VarChar(255)
+  description    String?
+  cover_image    String?             @db.VarChar(500)
+  location       String?             @db.VarChar(255)
+  location_type  event_location_type @default(in_person)
+  join_url       String?             @db.VarChar(500)
+  category       String?             @db.VarChar(100)
+  club_name      String?             @db.VarChar(150)
+  start_time     DateTime            @db.Timestamptz(6)
+  end_time       DateTime            @db.Timestamptz(6)
+  max_tickets    Int
+  status         event_status        @default(active)
+  created_at     DateTime            @default(now()) @db.Timestamptz(6)
+  updated_at     DateTime            @default(now()) @db.Timestamptz(6)
+  event_co_hosts event_co_hosts[]
+  event_schedule event_schedule[]
+  event_updates  event_updates[]
+  users          users               @relation(fields: [organizer_id], references: [id], onUpdate: NoAction)
+  feedbacks      feedbacks[]
+  registrations  registrations[]
 
   @@index([organizer_id], map: "idx_events_organizer_id")
   @@index([status, category, club_name, start_time], map: "idx_events_search")
@@ -53,7 +59,8 @@ model feedbacks {
   event_id        String           @db.Uuid
   user_id         String           @db.Uuid
   ticket_id       String           @unique @db.Uuid
-  content         String
+  rating          Int              @db.SmallInt
+  content         String?
   sentiment_label sentiment_label?
   keywords        String?
   analyzed_at     DateTime?        @db.Timestamptz(6)
@@ -64,7 +71,7 @@ model feedbacks {
 
   @@index([event_id], map: "idx_feedbacks_event_id")
   @@index([sentiment_label], map: "idx_feedbacks_sentiment_label")
-  @@index([event_id], map: "idx_feedbacks_unanalyzed", where: raw("(analyzed_at IS NULL)"))
+  @@index([event_id], map: "idx_feedbacks_unanalyzed", where: raw("((analyzed_at IS NULL) AND (content IS NOT NULL))"))
   @@index([user_id], map: "idx_feedbacks_user_id")
 }
 
@@ -102,23 +109,68 @@ model tickets {
 
 /// This model or at least one of its fields has comments in the database, and requires an additional setup for migrations: Read more: https://pris.ly/d/database-comments
 model users {
-  id                  String          @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
-  name                String          @db.VarChar(150)
-  email               String          @unique @db.VarChar(255)
-  password_hash       String          @db.VarChar(255)
+  id                  String           @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  name                String           @db.VarChar(150)
+  email               String           @unique @db.VarChar(255)
+  password_hash       String           @db.VarChar(255)
   role                user_role
-  is_active           Boolean         @default(true)
-  reset_token         String?         @db.VarChar(255)
-  reset_token_expires DateTime?       @db.Timestamptz(6)
-  created_at          DateTime        @default(now()) @db.Timestamptz(6)
-  updated_at          DateTime        @default(now()) @db.Timestamptz(6)
+  avatar_url          String?          @db.VarChar(500)
+  bio                 String?          @db.VarChar(160)
+  social_links        Json?
+  is_active           Boolean          @default(true)
+  reset_token         String?          @db.VarChar(255)
+  reset_token_expires DateTime?        @db.Timestamptz(6)
+  created_at          DateTime         @default(now()) @db.Timestamptz(6)
+  updated_at          DateTime         @default(now()) @db.Timestamptz(6)
   checkin_logs        checkin_logs[]
+  event_co_hosts      event_co_hosts[]
+  event_updates       event_updates[]
   events              events[]
   feedbacks           feedbacks[]
   registrations       registrations[]
 
   @@index([reset_token], map: "idx_users_reset_token", where: raw("(reset_token IS NOT NULL)"))
   @@index([role], map: "idx_users_role")
+}
+
+/// This model or at least one of its fields has comments in the database, and requires an additional setup for migrations: Read more: https://pris.ly/d/database-comments
+model event_co_hosts {
+  event_id String   @db.Uuid
+  user_id  String   @db.Uuid
+  added_at DateTime @default(now()) @db.Timestamptz(6)
+  events   events   @relation(fields: [event_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  users    users    @relation(fields: [user_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+
+  @@id([event_id, user_id])
+  @@index([user_id], map: "idx_event_co_hosts_user_id")
+}
+
+/// This model or at least one of its fields has comments in the database, and requires an additional setup for migrations: Read more: https://pris.ly/d/database-comments
+model event_schedule {
+  id         String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  event_id   String   @db.Uuid
+  start_time DateTime @db.Timestamptz(6)
+  title      String   @db.VarChar(255)
+  location   String?  @db.VarChar(255)
+  sort_order Int      @default(0)
+  created_at DateTime @default(now()) @db.Timestamptz(6)
+  events     events   @relation(fields: [event_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+
+  @@index([event_id], map: "idx_event_schedule_event_id")
+}
+
+/// This model or at least one of its fields has comments in the database, and requires an additional setup for migrations: Read more: https://pris.ly/d/database-comments
+model event_updates {
+  id           String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  event_id     String   @db.Uuid
+  organizer_id String   @db.Uuid
+  title        String   @db.VarChar(255)
+  content      String
+  created_at   DateTime @default(now()) @db.Timestamptz(6)
+  events       events   @relation(fields: [event_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  users        users    @relation(fields: [organizer_id], references: [id], onUpdate: NoAction)
+
+  @@index([event_id, created_at(sort: Desc)], map: "idx_event_updates_event_id")
 }
 
 enum event_status {
@@ -147,4 +199,15 @@ enum ticket_status {
 enum user_role {
   student
   organizer
+  admin
+}
+
+enum checkin_method {
+  qr_scan
+  self
+}
+
+enum event_location_type {
+  in_person
+  online
 }
