@@ -1,4 +1,4 @@
-import { Prisma } from '../../generated/prisma/client';
+import { $Enums, Prisma } from '../../generated/prisma/client';
 import { prisma } from '../config/db';
 import { AppError } from '../utils/errors';
 import {
@@ -65,7 +65,10 @@ export class EventService {
         location: input.location ?? null,
         location_type: input.location_type,
         join_url: input.join_url ?? null,
-        category: input.category ?? null,
+        // SCHEMA v0.4.1: events.category là ENUM event_category (9 giá trị, BR-28b).
+        // TODO [Nhóm 2]: siết zod thành z.enum 9 giá trị — hiện zod vẫn nhận chuỗi tự do
+        // nên giá trị ngoài danh mục sẽ bị CSDL từ chối thay vì trả 400 VALIDATION_ERROR.
+        category: (input.category ?? null) as $Enums.event_category | null,
         club_name: input.club_name ?? null,
         start_time: input.start_time,
         end_time: input.end_time,
@@ -106,7 +109,7 @@ export class EventService {
     }
 
     if (category) {
-      whereClause.category = category;
+      whereClause.category = category as $Enums.event_category;
     }
 
     if (club_name) {
@@ -281,7 +284,8 @@ export class EventService {
     if (input.location !== undefined) data.location = input.location;
     if (input.location_type !== undefined) data.location_type = input.location_type;
     if (input.join_url !== undefined) data.join_url = input.join_url;
-    if (input.category !== undefined) data.category = input.category;
+    if (input.category !== undefined)
+      data.category = input.category as $Enums.event_category;
     if (input.club_name !== undefined) data.club_name = input.club_name;
     if (input.start_time !== undefined) data.start_time = input.start_time;
     if (input.end_time !== undefined) data.end_time = input.end_time;

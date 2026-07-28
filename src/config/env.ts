@@ -6,11 +6,20 @@ const envSchema = z.object({
   PORT: z.coerce.number().default(3000),
   DATABASE_URL: z.string().min(1, 'DATABASE_URL là bắt buộc'),
   JWT_SECRET: z.string().min(10, 'JWT_SECRET tối thiểu 10 ký tự'),
-  JWT_EXPIRES_IN: z.string().default('2h'),
-  // Redis chưa tích hợp trong Tuần 1-2, placeholder theo API.md
-  REDIS_URL: z.string().default('redis://localhost:6379'),
-  // BR-03: chuỗi tĩnh dùng để xác thực đăng ký role=organizer (FR-01)
-  ORGANIZER_CODE: z.string().min(1, 'ORGANIZER_CODE là bắt buộc'),
+  // Hạn access token tính bằng GIÂY - nguồn duy nhất cho cả jwt.sign lẫn expires_in
+  // trả về client (API.md mục 1.4: 2 giờ = 7200 giây)
+  JWT_EXPIRES_IN: z.coerce.number().int().positive().default(7200),
+  // Redis phục vụ rate-limit store (API.md mục 1.6), hàng đợi BullMQ và các khoá nghiệp vụ
+  REDIS_URL: z.string().min(1, 'REDIS_URL là bắt buộc'),
+  // Cấu hình SMTP cho worker gửi email (SRS mục 5.6 - kiến trúc: email nằm ở phía Worker).
+  // Mặc định trỏ Mailpit/MailHog chạy cục bộ để không chặn khởi động khi dev chưa cấu hình.
+  SMTP_HOST: z.string().default('localhost'),
+  SMTP_PORT: z.coerce.number().int().positive().default(1025),
+  SMTP_USER: z.string().optional(),
+  SMTP_PASS: z.string().optional(),
+  SMTP_FROM: z.string().default('UniEvent Flow <no-reply@unievent.local>'),
+  // Gốc đường dẫn trang đặt lại mật khẩu phía FE (FR-07) - worker ghép token vào link này
+  APP_RESET_URL: z.string().default('http://localhost:5173/reset-password'),
 });
 
 const parsed = envSchema.safeParse(process.env);

@@ -2,7 +2,7 @@ import { prisma } from '../config/db';
 import { AppError } from '../utils/errors';
 
 export class EventCoHostService {
-  // Gắn CLB/Ban tổ chức đồng hành (FR-37) - ownership đã được requireOwnership đảm bảo
+  // Gắn CLB/Ban tổ chức đồng hành (FR-37) - ownership đã được requireOwnerOnly đảm bảo
   public static async addCoHost(eventId: string, userId: string) {
     const user = await prisma.users.findUnique({ where: { id: userId } });
 

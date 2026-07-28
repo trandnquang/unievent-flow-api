@@ -16,7 +16,7 @@ export class EventScheduleService {
     return schedule;
   }
 
-  // Thêm mốc lịch trình mới (FR-32) - ownership đã được requireOwnership đảm bảo
+  // Thêm mốc lịch trình mới (FR-32) - quyền đã được requireOwnerOrCoHost đảm bảo
   public static async createScheduleItem(
     eventId: string,
     input: CreateEventScheduleInput

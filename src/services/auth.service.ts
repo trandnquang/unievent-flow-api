@@ -3,6 +3,7 @@ import jwt from 'jsonwebtoken';
 import crypto from 'node:crypto';
 import { prisma } from '../config/db';
 import { env } from '../config/env';
+import { emailQueue } from '../config/queues';
 import { AppError } from '../utils/errors';
 import { sanitizeUser, SafeUser } from '../utils/user';
 import {
@@ -29,24 +30,17 @@ export class AuthService {
       );
     }
 
-    // BR-03: role=organizer bắt buộc organizerCode khớp với biến môi trường ORGANIZER_CODE
-    if (input.role === 'organizer' && input.organizer_code !== env.ORGANIZER_CODE) {
-      throw new AppError(
-        422,
-        'INVALID_ORGANIZER_CODE',
-        'Mã đăng ký Ban tổ chức không hợp lệ.'
-      );
-    }
-
     // Băm mật khẩu bằng bcrypt (NFR-08)
     const passwordHash = await bcrypt.hash(input.password, 10);
 
+    // API.md mục 2 (v0.3.0): đăng ký tự do LUÔN tạo role='student'. Tài khoản Ban tổ chức
+    // chỉ được cấp qua POST /admin/organizers (FR-38) nên không nhận role từ client.
     const newUser = await prisma.users.create({
       data: {
         name: input.name,
         email: input.email,
         password_hash: passwordHash,
-        role: input.role,
+        role: 'student',
         is_active: true,
       },
     });
@@ -56,8 +50,8 @@ export class AuthService {
 
   // Đăng nhập tài khoản (FR-02)
   public static async login(input: LoginInput): Promise<{
-    accessToken: string;
-    expiresIn: string;
+    access_token: string;
+    expires_in: number;
     user: SafeUser;
   }> {
     const user = await prisma.users.findUnique({
@@ -97,9 +91,10 @@ export class AuthService {
       );
     }
 
-    // Sinh JWT token (mặc định 2 giờ = 7200s)
+    // Sinh JWT token - env.JWT_EXPIRES_IN (giây) là nguồn duy nhất cho cả chữ ký
+    // lẫn expires_in trả về client, để đổi cấu hình không làm 2 giá trị lệch nhau
     const signOptions: jwt.SignOptions = {
-      expiresIn: 7200,
+      expiresIn: env.JWT_EXPIRES_IN,
     };
     const accessToken = jwt.sign(
       { sub: user.id, role: user.role },
@@ -108,8 +103,8 @@ export class AuthService {
     );
 
     return {
-      accessToken,
-      expiresIn: env.JWT_EXPIRES_IN,
+      access_token: accessToken,
+      expires_in: env.JWT_EXPIRES_IN,
       user: sanitizeUser(user),
     };
   }
@@ -133,7 +128,21 @@ export class AuthService {
         },
       });
 
-      // TODO [Tuần 3]: Gửi email chứa link/resetToken qua BullMQ worker gửi email
+      // Đẩy job gửi email cho worker (SRS mục 5.6) - lỗi hàng đợi KHÔNG được làm hỏng
+      // response 202, vì BR-22 yêu cầu luôn trả cùng một kết quả để không lộ email tồn tại
+      try {
+        await emailQueue.add('password_reset', {
+          type: 'password_reset',
+          to: user.email,
+          name: user.name,
+          reset_token: resetToken,
+        });
+      } catch (error) {
+        console.error(
+          '❌ Không đẩy được job gửi email đặt lại mật khẩu:',
+          error instanceof Error ? error.message : error
+        );
+      }
     }
   }
 
@@ -159,7 +168,7 @@ export class AuthService {
     }
 
     // Hash mật khẩu mới và xoá token khôi phục
-    const passwordHash = await bcrypt.hash(input.newPassword, 10);
+    const passwordHash = await bcrypt.hash(input.new_password, 10);
 
     await prisma.users.update({
       where: { id: user.id },
@@ -185,7 +194,7 @@ export class AuthService {
     }
 
     const isOldPasswordValid = await bcrypt.compare(
-      input.oldPassword,
+      input.old_password,
       user.password_hash
     );
 
@@ -197,7 +206,7 @@ export class AuthService {
       );
     }
 
-    const newPasswordHash = await bcrypt.hash(input.newPassword, 10);
+    const newPasswordHash = await bcrypt.hash(input.new_password, 10);
 
     await prisma.users.update({
       where: { id: userId },

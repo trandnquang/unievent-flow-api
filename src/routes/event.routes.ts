@@ -7,7 +7,8 @@ import {
   requireAuth,
   requireActive,
   requireRole,
-  requireOwnership,
+  requireOwnerOnly,
+  requireOwnerOrCoHost,
 } from '../middlewares/auth.middleware';
 
 const router = Router();
@@ -41,7 +42,7 @@ router.patch(
   requireAuth,
   requireActive,
   requireRole('organizer'),
-  requireOwnership,
+  requireOwnerOnly,
   EventController.update
 );
 
@@ -50,7 +51,7 @@ router.post(
   requireAuth,
   requireActive,
   requireRole('organizer'),
-  requireOwnership,
+  requireOwnerOnly,
   EventController.cancel
 );
 
@@ -62,7 +63,7 @@ router.post(
   requireAuth,
   requireActive,
   requireRole('organizer'),
-  requireOwnership,
+  requireOwnerOrCoHost,
   EventUpdateController.create
 );
 
@@ -74,7 +75,7 @@ router.post(
   requireAuth,
   requireActive,
   requireRole('organizer'),
-  requireOwnership,
+  requireOwnerOrCoHost,
   EventScheduleController.create
 );
 
@@ -83,7 +84,7 @@ router.patch(
   requireAuth,
   requireActive,
   requireRole('organizer'),
-  requireOwnership,
+  requireOwnerOrCoHost,
   EventScheduleController.update
 );
 
@@ -92,7 +93,7 @@ router.delete(
   requireAuth,
   requireActive,
   requireRole('organizer'),
-  requireOwnership,
+  requireOwnerOrCoHost,
   EventScheduleController.remove
 );
 
@@ -102,7 +103,7 @@ router.post(
   requireAuth,
   requireActive,
   requireRole('organizer'),
-  requireOwnership,
+  requireOwnerOnly,
   EventCoHostController.create
 );
 
@@ -111,7 +112,7 @@ router.delete(
   requireAuth,
   requireActive,
   requireRole('organizer'),
-  requireOwnership,
+  requireOwnerOnly,
   EventCoHostController.remove
 );
 

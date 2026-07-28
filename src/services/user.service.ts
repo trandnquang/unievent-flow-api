@@ -23,6 +23,19 @@ export class UserService {
     userId: string,
     input: UpdateProfileInput
   ): Promise<SafeUser> {
+    // BR-17: club_name chỉ có ý nghĩa với role=organizer. Role khác gửi lên thì BỎ QUA
+    // im lặng, không báo lỗi. Đọc role từ CSDL (nguồn tin cậy) thay vì tin role trong JWT.
+    const currentUser = await prisma.users.findUnique({
+      where: { id: userId },
+      select: { role: true },
+    });
+
+    if (!currentUser) {
+      throw new AppError(404, 'USER_NOT_FOUND', 'Không tìm thấy người dùng');
+    }
+
+    const isOrganizer = currentUser.role === 'organizer';
+
     const updatedUser = await prisma.users.update({
       where: { id: userId },
       data: {
@@ -32,6 +45,9 @@ export class UserService {
         ...(input.social_links !== undefined
           ? { social_links: input.social_links }
           : {}),
+        ...(isOrganizer && input.club_name !== undefined
+          ? { club_name: input.club_name }
+          : {}),
       },
     });
 
@@ -39,7 +55,7 @@ export class UserService {
   }
 
   // Hồ sơ công khai Ban tổ chức (FR-33) - BR-26: chỉ trả nếu role=organizer, trường
-  // trả về giới hạn {name, avatar_url, bio, social_links} - KHÔNG BAO GIỜ trả
+  // trả về giới hạn {name, club_name, avatar_url, bio, social_links} - KHÔNG BAO GIỜ trả
   // email/password_hash, nên select thẳng ở tầng CSDL thay vì lọc sau khi query
   public static async getOrganizerProfile(userId: string) {
     const organizer = await prisma.users.findUnique({
@@ -47,6 +63,7 @@ export class UserService {
       select: {
         role: true,
         name: true,
+        club_name: true,
         avatar_url: true,
         bio: true,
         social_links: true,
@@ -66,6 +83,7 @@ export class UserService {
     return {
       organizer: {
         name: organizer.name,
+        club_name: organizer.club_name,
         avatar_url: organizer.avatar_url,
         bio: organizer.bio,
         social_links: organizer.social_links,

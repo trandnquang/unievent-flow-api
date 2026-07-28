@@ -86,8 +86,10 @@ export const requireRole = (...allowedRoles: $Enums.user_role[]) => {
   };
 };
 
-// Middleware kiểm tra quyền sở hữu resource (so sánh event.organizer_id với req.user.id)
-export const requireOwnership = async (
+// Middleware kiểm tra quyền sở hữu resource (so sánh event.organizer_id với req.user.id).
+// Dùng cho thao tác KHÔNG uỷ quyền được cho Co-host: sửa/huỷ sự kiện (FR-10/11),
+// thêm/xoá Co-host (FR-37) — API.md mục 1.4, SRS CBR 6.
+export const requireOwnerOnly = async (
   req: Request,
   _res: Response,
   next: NextFunction
@@ -117,6 +119,61 @@ export const requireOwnership = async (
         'FORBIDDEN_NOT_OWNER',
         'Bạn không phải chủ sở hữu của sự kiện này'
       );
+    }
+
+    // Gán event vào req để controller không cần query lại DB
+    req.event = event;
+    next();
+  } catch (error) {
+    next(error);
+  }
+};
+
+// Middleware cho phép chủ sự kiện HOẶC Co-host đã chấp nhận lời mời (API.md mục 1.4, SRS CBR 6).
+// Dùng cho thao tác Co-host được phép làm: đăng thông báo (FR-31), quản lý lịch trình (FR-32),
+// check-in (FR-19→22). Co-host ở trạng thái pending/declined KHÔNG thoả điều kiện (BR-46).
+export const requireOwnerOrCoHost = async (
+  req: Request,
+  _res: Response,
+  next: NextFunction
+): Promise<void> => {
+  try {
+    const rawEventId = req.params.eventId;
+    const eventId = Array.isArray(rawEventId) ? rawEventId[0] : rawEventId;
+    if (!eventId || typeof eventId !== 'string') {
+      throw new AppError(400, 'BAD_REQUEST', 'Thiếu tham số eventId');
+    }
+
+    if (!req.user) {
+      throw new AppError(401, 'UNAUTHORIZED', 'Vui lòng đăng nhập');
+    }
+
+    const event = await prisma.events.findUnique({
+      where: { id: eventId },
+    });
+
+    if (!event) {
+      throw new AppError(404, 'EVENT_NOT_FOUND', 'Không tìm thấy sự kiện');
+    }
+
+    if (event.organizer_id !== req.user.id) {
+      const coHost = await prisma.event_co_hosts.findUnique({
+        where: {
+          event_id_user_id: {
+            event_id: eventId,
+            user_id: req.user.id,
+          },
+        },
+        select: { status: true },
+      });
+
+      if (!coHost || coHost.status !== 'accepted') {
+        throw new AppError(
+          403,
+          'FORBIDDEN_NOT_OWNER',
+          'Bạn không phải chủ sở hữu hoặc đơn vị đồng tổ chức của sự kiện này'
+        );
+      }
     }
 
     // Gán event vào req để controller không cần query lại DB

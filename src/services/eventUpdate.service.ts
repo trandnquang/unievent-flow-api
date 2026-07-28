@@ -36,7 +36,7 @@ export class EventUpdateService {
     };
   }
 
-  // Đăng thông báo cập nhật mới (FR-31) - BR-40 ownership đã được requireOwnership đảm bảo
+  // Đăng thông báo cập nhật mới (FR-31) - BR-40 quyền đã được requireOwnerOrCoHost đảm bảo
   public static async createUpdate(
     eventId: string,
     organizerId: string,

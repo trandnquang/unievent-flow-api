@@ -1,6 +1,8 @@
 import { Request, Response, NextFunction } from 'express';
 import { UserService } from '../services/user.service';
+import { FeedbackService } from '../services/feedback.service';
 import { updateProfileSchema } from '../schemas/auth.schema';
+import { queryMyFeedbacksSchema } from '../schemas/feedback.schema';
 import { AppError } from '../utils/errors';
 
 export class UserController {
@@ -43,6 +45,30 @@ export class UserController {
       res.status(200).json({
         success: true,
         data: { user },
+      });
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  // Danh sách phản hồi đã gửi của chính mình (GET /users/me/feedbacks - FR-42, BR-122)
+  public static async getMyFeedbacks(
+    req: Request,
+    res: Response,
+    next: NextFunction
+  ): Promise<void> {
+    try {
+      if (!req.user) {
+        throw new AppError(401, 'UNAUTHORIZED', 'Vui lòng đăng nhập');
+      }
+
+      const query = queryMyFeedbacksSchema.parse(req.query);
+      const result = await FeedbackService.getMyFeedbacks(req.user.id, query);
+
+      res.status(200).json({
+        success: true,
+        data: { feedbacks: result.feedbacks },
+        meta: result.meta,
       });
     } catch (error) {
       next(error);
