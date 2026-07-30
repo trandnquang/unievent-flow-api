@@ -24,6 +24,22 @@ services:
       - redisdata:/data
     command: redis-server --appendonly yes
 
+  # Máy chủ SMTP giả lập cho worker gửi email (FR-07, FR-16, FR-31, FR-35, FR-38).
+  # Bắt mọi email thay vì gửi ra ngoài thật; xem hộp thư tại http://localhost:8025
+  mailpit:
+    image: axllent/mailpit:latest
+    container_name: unievent_mailpit
+    restart: always
+    ports:
+      - "1025:1025" # SMTP - khớp SMTP_PORT trong .env
+      - "8025:8025" # Giao diện web xem email đã nhận
+    environment:
+      MP_MAX_MESSAGES: 500
+      MP_DATABASE: /data/mailpit.db
+    volumes:
+      - mailpitdata:/data
+
 volumes:
   pgdata:
   redisdata:
+  mailpitdata:

@@ -2,8 +2,28 @@ import { Request, Response, NextFunction } from 'express';
 import jwt from 'jsonwebtoken';
 import { env } from '../config/env';
 import { prisma } from '../config/db';
+import { redis } from '../config/redis';
 import { AppError } from '../utils/errors';
 import { $Enums } from '../../generated/prisma/client';
+
+// BR-98 (CBR 7): khoá cache trạng thái tài khoản. Giá trị '1' = đang hoạt động, '0' = đã
+// vô hiệu hoá — lưu cả hai chiều để tài khoản bị khoá cũng không phải truy vấn lại mỗi request.
+const activeCacheKey = (userId: string): string => `active:${userId}`;
+
+// Xoá cache ngay khi FR-29 đổi trạng thái tài khoản, nhờ vậy việc thu hồi quyền có hiệu lực
+// từ request KẾ TIẾP thay vì phải chờ TTL hết hạn (BR-98).
+export const invalidateActiveCache = async (userId: string): Promise<void> => {
+  try {
+    await redis.del(activeCacheKey(userId));
+  } catch (error) {
+    // Không ném lỗi: thao tác quản trị đã ghi vào PostgreSQL thành công rồi. Xoá cache hỏng
+    // chỉ làm chậm hiệu lực tối đa ACTIVE_CACHE_TTL_SECONDS, không làm sai kết quả.
+    console.error(
+      `❌ [ERROR] Không xoá được cache active:${userId} — thu hồi quyền sẽ trễ tối đa ${env.ACTIVE_CACHE_TTL_SECONDS}s:`,
+      error instanceof Error ? error.message : error
+    );
+  }
+};
 
 interface JwtPayload {
   sub: string;
@@ -40,9 +60,13 @@ export const requireAuth = (
   }
 };
 
-// Middleware re-check is_active trực tiếp từ CSDL cho mỗi request (API.md mục 1.4) -
+// Middleware re-check is_active trên MỌI request đã xác thực (API.md mục 1.4, CBR 7) -
 // KHÔNG tin giá trị is_active tại thời điểm JWT được cấp, vì access token còn hiệu lực
-// tới 2h sau khi Quản trị viên đã vô hiệu hoá tài khoản (BR-08, FR-29)
+// tới 2h sau khi Quản trị viên đã vô hiệu hoá tài khoản (BR-08, FR-29).
+//
+// BR-98: đọc qua cache Redis `active:{userId}` TTL 60s để không phải truy vấn CSDL mỗi
+// request. FR-29 xoá cache ngay khi đổi trạng thái nên việc thu hồi quyền vẫn có hiệu lực
+// từ request kế tiếp; TTL chỉ là lưới an toàn khi thao tác xoá cache thất bại.
 export const requireActive = async (
   req: Request,
   _res: Response,
@@ -53,12 +77,44 @@ export const requireActive = async (
       throw new AppError(401, 'UNAUTHORIZED', 'Vui lòng đăng nhập');
     }
 
-    const user = await prisma.users.findUnique({
-      where: { id: req.user.id },
-      select: { is_active: true },
-    });
+    const userId = req.user.id;
+    let isActive: boolean | null = null;
 
-    if (!user || !user.is_active) {
+    // Redis hỏng KHÔNG được chặn request: bỏ qua cache và tra thẳng CSDL. Đây là lùi về
+    // nguồn sự thật, không phải cho qua vô điều kiện.
+    try {
+      const cached = await redis.get(activeCacheKey(userId));
+      if (cached !== null) isActive = cached === '1';
+    } catch (error) {
+      console.error(
+        '❌ [ERROR] Không đọc được cache trạng thái tài khoản, tra cứu CSDL thay thế:',
+        error instanceof Error ? error.message : error
+      );
+    }
+
+    if (isActive === null) {
+      const user = await prisma.users.findUnique({
+        where: { id: userId },
+        select: { is_active: true },
+      });
+
+      // Tài khoản không tồn tại xử lý như đã vô hiệu hoá — và vẫn ghi cache để một token
+      // của tài khoản đã bị xoá không tạo ra truy vấn CSDL ở mọi request.
+      isActive = user?.is_active === true;
+
+      try {
+        await redis.set(
+          activeCacheKey(userId),
+          isActive ? '1' : '0',
+          'EX',
+          env.ACTIVE_CACHE_TTL_SECONDS
+        );
+      } catch {
+        /* không ghi được cache thì thôi, lần sau tra lại CSDL */
+      }
+    }
+
+    if (!isActive) {
       throw new AppError(
         403,
         'ACCOUNT_DISABLED',

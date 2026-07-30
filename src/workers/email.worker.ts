@@ -2,6 +2,10 @@ import { Job, Worker } from 'bullmq';
 import { bullConnection } from '../config/bullmq';
 import { EMAIL_QUEUE_NAME, EmailJobData } from '../config/queues';
 import { EmailService } from '../services/email.service';
+import { sendUpdateNotification } from './sendUpdateNotification';
+import { sendCoHostInvitation } from './sendCoHostInvitation';
+import { sendTicketConfirmation } from './sendTicketConfirmation';
+import { sendOrganizerCredentials } from './sendOrganizerCredentials';
 
 // Worker gửi email (SRS mục 5.6). Chạy ở tiến trình riêng: `npm run worker`.
 // Số lần thử lại + backoff lấy theo defaultJobOptions ở config/bullmq.ts.
@@ -12,10 +16,24 @@ export const emailWorker = new Worker<EmailJobData>(
       case 'password_reset':
         await EmailService.sendPasswordResetEmail(job.data);
         break;
+      case 'event_update':
+        await sendUpdateNotification(job.data);
+        break;
+      case 'co_host_invitation':
+        await sendCoHostInvitation(job.data);
+        break;
+      case 'ticket_confirmation':
+        await sendTicketConfirmation(job.data);
+        break;
+      case 'organizer_credentials':
+        await sendOrganizerCredentials(job.data);
+        break;
       default: {
         // Chặn ở tầng kiểu: thêm loại job mới mà quên xử lý sẽ lỗi biên dịch
-        const unhandled: never = job.data.type;
-        throw new Error(`Loại email job chưa được xử lý: ${String(unhandled)}`);
+        const unhandled: never = job.data;
+        throw new Error(
+          `Loại email job chưa được xử lý: ${JSON.stringify(unhandled)}`
+        );
       }
     }
   },

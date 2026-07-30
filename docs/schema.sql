@@ -1,8 +1,36 @@
 -- ============================================================================
 -- UniEvent Flow — Database Schema (PostgreSQL)
--- Nguồn: ERD.md v0.4.1 + SRS v0.6.6 (42 FR, 42 UC, 127 BR) + API.md v0.4.4
+-- Nguồn: ERD.md v0.4.1 + SRS v0.7.0 (42 FR, 42 UC, 127 BR) + API.md v0.5.0
 -- Phiên bản schema: v0.4.1
--- Ngày cập nhật: 26/07/2026
+-- Ngày cập nhật: 30/07/2026
+--
+-- CHANGELOG v0.4.1 (30/07/2026, đồng bộ SRS v0.7.0 / API v0.5.0 — 6 nhóm cuối):
+--   KHÔNG có thay đổi DDL nào. Toàn bộ Check-in, Feedback&AI, Dashboard, Quản trị và
+--   Uploads chạy trên bảng/cột/index đã có sẵn từ v0.4.1.
+--
+--   ⚠️ HAI RÀNG BUỘC DƯỚI ĐÂY CHỈ TỒN TẠI Ở FILE NÀY, KHÔNG CÓ TRONG schema.prisma:
+--     - chk_checkin_method_organizer (bảng checkin_logs): 'self' => organizer_id NULL,
+--       'qr_scan' => organizer_id NOT NULL.
+--     - rating BETWEEN 1 AND 5 (bảng feedbacks).
+--   Prisma introspect không biểu diễn được CHECK constraint, nên tầng ứng dụng PHẢI tự
+--   chặn ở Zod/service — nếu không, CSDL ném lỗi thô và người dùng nhận HTTP 500 thay vì
+--   lỗi nghiệp vụ rõ ràng. Xem SRS mục 2.6.1 ghi chú 4.
+--
+--   ⚠️ VIEW v_event_registration_stats KHÔNG được khai báo trong schema.prisma (thiếu
+--   previewFeatures = ["views"]) — mọi truy vấn tới view này phải dùng $queryRaw.
+--   Xem SRS mục 2.6.1 ghi chú 5.
+--
+-- CHANGELOG v0.4.1 (29/07/2026, đồng bộ SRS v0.6.10 / API v0.4.8 — Nhóm 3 Đăng ký & Vé):
+--   KHÔNG có thay đổi DDL nào. Toàn bộ nghiệp vụ đăng ký/vé chạy trên các bảng và enum
+--   đã có sẵn: registrations (+ partial unique uq_registration_active_per_user_event),
+--   tickets.jwt_code, và view v_event_registration_stats dùng để đối soát với bộ đếm Redis.
+--   Ghi chú: bộ đếm vé và khoá giữ chỗ nằm HOÀN TOÀN trên Redis, không có cột tương ứng
+--   trong PostgreSQL — đây là thiết kế hai pha có chủ đích (xem SRS mục 2.2.3).
+--
+-- CHANGELOG v0.4.1 (28/07/2026, đồng bộ SRS v0.6.9 / API v0.4.7):
+--   KHÔNG có thay đổi DDL nào. Chỉ sửa comment ràng buộc BR-106 ở bảng events:
+--   cancel_reason nay BẮT BUỘC ở cả FR-11 lẫn FR-30 (trước ghi FR-11 được để NULL).
+--   3 cột cancel_reason/cancelled_by/cancelled_at vẫn NULLABLE như cũ.
 --
 -- CHANGELOG v0.4.0 -> v0.4.1 (Giai đoạn 1 — rà soát đồng bộ chéo 4 tài liệu):
 --   KHÔNG có thay đổi DDL nào. Chỉ cập nhật dòng provenance ở header cho khớp
@@ -188,17 +216,20 @@ CREATE TABLE events (
     end_time       TIMESTAMPTZ NOT NULL,
     max_tickets    INTEGER NOT NULL CHECK (max_tickets > 0),
     status         event_status NOT NULL DEFAULT 'active',
-    cancel_reason  TEXT,                                              -- mới v1.0 (FR-30, BR-106)
+    cancel_reason  TEXT,                                              -- mới v1.0 (FR-11 + FR-30, BR-106)
     cancelled_by   UUID REFERENCES users(id) ON DELETE SET NULL,      -- mới v1.0 — ai huỷ (Admin hoặc chủ sự kiện)
     cancelled_at   TIMESTAMPTZ,                                       -- mới v1.0 — thời điểm huỷ
     created_at     TIMESTAMPTZ NOT NULL DEFAULT now(),
     updated_at     TIMESTAMPTZ NOT NULL DEFAULT now(),
 
     CONSTRAINT chk_event_time_range CHECK (end_time > start_time),
-    -- BR-106 (SRS UC-37): khi Admin buộc huỷ, cancel_reason bắt buộc 10-500 ký tự.
-    -- Chủ sự kiện tự huỷ (FR-11) có thể để cancel_reason NULL. Ràng buộc "đã huỷ thì
-    -- phải có cancelled_by/at" kiểm ở tầng service (aggregate với status), không CHECK
-    -- cứng ở CSDL để tránh chặn dữ liệu seed/migrate.
+    -- BR-106 (SRS v0.6.9): cancel_reason BẮT BUỘC 10-500 ký tự ở CẢ HAI luồng huỷ —
+    -- chủ sự kiện tự huỷ (FR-11) và Admin buộc huỷ (FR-30). Vi phạm -> 422
+    -- CANCEL_REASON_REQUIRED. (Bản trước ghi "FR-11 có thể để NULL" — đã bỏ ở v0.6.9
+    -- vì mâu thuẫn với UI SRS 4.3.8 vốn luôn bắt buộc nhập lý do.)
+    -- 3 cột vẫn NULLABLE ở tầng CSDL: sự kiện chưa huỷ thì không có gì để ghi. Ràng buộc
+    -- "đã huỷ thì phải có đủ reason/by/at" kiểm ở tầng service (aggregate với status),
+    -- không CHECK cứng ở CSDL để tránh chặn dữ liệu seed/migrate.
     -- BR-30 (SRS 3.2.1): location bắt buộc nếu in_person; join_url bắt buộc nếu online.
     CONSTRAINT chk_event_location_fields CHECK (
         (location_type = 'in_person' AND location IS NOT NULL)

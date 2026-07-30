@@ -1,5 +1,15 @@
 import Redis from 'ioredis';
 import { env } from './env';
+import { DECREMENT_TICKET, RESYNC_TICKET_COUNTER } from '../redis/scripts';
+
+// ioredis không tự sinh kiểu cho lệnh nạp bằng defineCommand — khai báo bổ sung để
+// gọi được dưới strict mode mà không phải ép kiểu ở từng chỗ dùng.
+declare module 'ioredis' {
+  interface RedisCommander<Context> {
+    decrementTicket(key: string): Promise<number>;
+    resyncTicketCounter(key: string, delta: string): Promise<number>;
+  }
+}
 
 // Khởi tạo Redis client singleton dùng chung cho toàn ứng dụng (API.md mục 12):
 // rate-limit store (mục 1.6), hàng đợi BullMQ (config/bullmq.ts), và các khoá
@@ -20,6 +30,18 @@ export const redis =
 if (process.env.NODE_ENV !== 'production') {
   globalForRedis.redis = redis;
 }
+
+// Nạp Lua script một lần lúc khởi tạo client. ioredis tự lo EVALSHA + fallback EVAL khi
+// Redis chưa cache script, nên các lệnh dưới đây gọi như lệnh Redis bình thường.
+redis.defineCommand('decrementTicket', {
+  numberOfKeys: 1,
+  lua: DECREMENT_TICKET,
+});
+
+redis.defineCommand('resyncTicketCounter', {
+  numberOfKeys: 1,
+  lua: RESYNC_TICKET_COUNTER,
+});
 
 redis.on('error', (error: Error) => {
   console.error('❌ Lỗi kết nối Redis:', error.message);

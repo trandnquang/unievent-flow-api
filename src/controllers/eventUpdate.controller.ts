@@ -2,9 +2,20 @@ import { Request, Response, NextFunction } from 'express';
 import { EventUpdateService } from '../services/eventUpdate.service';
 import {
   createEventUpdateSchema,
+  updateEventUpdateSchema,
   queryEventUpdatesSchema,
 } from '../schemas/eventUpdate.schema';
 import { AppError } from '../utils/errors';
+
+// Lấy path param dạng chuỗi, chặn trường hợp express trả mảng
+const getParam = (req: Request, name: string): string => {
+  const raw = req.params[name];
+  const value = Array.isArray(raw) ? raw[0] : raw;
+  if (!value) {
+    throw new AppError(400, 'BAD_REQUEST', `Thiếu tham số ${name}`);
+  }
+  return value;
+};
 
 export class EventUpdateController {
   // Danh sách thông báo cập nhật (GET /events/:eventId/updates - FR-31, Public)
@@ -61,6 +72,50 @@ export class EventUpdateController {
         success: true,
         data: { update },
       });
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  // Sửa thông báo (PATCH /events/:eventId/updates/:updateId - FR-31, BR-40b)
+  public static async update(
+    req: Request,
+    res: Response,
+    next: NextFunction
+  ): Promise<void> {
+    try {
+      const eventId = getParam(req, 'eventId');
+      const updateId = getParam(req, 'updateId');
+
+      const input = updateEventUpdateSchema.parse(req.body);
+      const update = await EventUpdateService.updateUpdate(
+        eventId,
+        updateId,
+        input
+      );
+
+      res.status(200).json({
+        success: true,
+        data: { update },
+      });
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  // Xoá thông báo (DELETE /events/:eventId/updates/:updateId - FR-31, BR-40c)
+  public static async remove(
+    req: Request,
+    res: Response,
+    next: NextFunction
+  ): Promise<void> {
+    try {
+      const eventId = getParam(req, 'eventId');
+      const updateId = getParam(req, 'updateId');
+
+      await EventUpdateService.deleteUpdate(eventId, updateId);
+
+      res.status(204).end();
     } catch (error) {
       next(error);
     }

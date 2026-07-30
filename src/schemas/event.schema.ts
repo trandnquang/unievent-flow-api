@@ -1,4 +1,22 @@
 import { z } from 'zod';
+import { paginationSchema } from './common.schema';
+
+// BR-28b: category phải thuộc đúng 9 giá trị của ENUM event_category trong SCHEMA v0.4.1.
+// Chặn ở tầng Zod (400 VALIDATION_ERROR) thay vì để CSDL từ chối (500 không kiểm soát).
+export const eventCategorySchema = z.enum(
+  [
+    'academic',
+    'competition',
+    'seminar_workshop',
+    'career',
+    'volunteer',
+    'arts_entertainment',
+    'sports',
+    'orientation',
+    'other',
+  ],
+  { error: 'Thể loại sự kiện không thuộc danh mục cho phép' }
+);
 
 // Schema tạo mới sự kiện (FR-08) - Kiểm tra ràng buộc end_time > start_time và max_tickets > 0
 export const createEventSchema = z
@@ -24,10 +42,7 @@ export const createEventSchema = z
       .string()
       .max(500, 'Đường dẫn tham gia tối đa 500 ký tự')
       .optional(),
-    category: z
-      .string()
-      .max(100, 'Thể loại tối đa 100 ký tự')
-      .optional(),
+    category: eventCategorySchema.optional(),
     club_name: z
       .string()
       .max(150, 'Tên câu lạc bộ tối đa 150 ký tự')
@@ -99,10 +114,7 @@ export const updateEventSchema = z
       .string()
       .max(500, 'Đường dẫn tham gia tối đa 500 ký tự')
       .optional(),
-    category: z
-      .string()
-      .max(100, 'Thể loại tối đa 100 ký tự')
-      .optional(),
+    category: eventCategorySchema.optional(),
     club_name: z
       .string()
       .max(150, 'Tên câu lạc bộ tối đa 150 ký tự')
@@ -129,17 +141,33 @@ export const updateEventSchema = z
   );
 
 // Schema lọc & phân trang danh sách sự kiện (FR-13)
-export const queryEventsSchema = z.object({
+export const queryEventsSchema = paginationSchema.extend({
   q: z.string().optional(),
-  category: z.string().optional(),
+  // BR-28b: lọc so khớp CHÍNH XÁC giá trị ENUM, không phải chuỗi con tự do.
+  // Nếu để z.string() thì ?category=abc rơi xuống Prisma và sinh 500 thay vì 400.
+  category: eventCategorySchema.optional(),
   club_name: z.string().optional(),
   from: z.coerce.date().optional(),
   to: z.coerce.date().optional(),
-  page: z.coerce.number().int().positive().default(1),
-  limit: z.coerce.number().int().positive().max(100).default(20),
   sort: z.string().default('-created_at'),
+});
+
+// Schema phân trang danh sách sự kiện của chính organizer (FR-12) - phân trang chỉ áp cho
+// nhánh `owned`; `co_hosting` và `pending_invitations` luôn trả đủ để FE dựng banner lời mời
+export const queryMyEventsSchema = paginationSchema;
+
+// FR-11 (BR-106 + quyết định M3): lý do huỷ là BẮT BUỘC, 10-500 ký tự, giống FR-30.
+// Vi phạm trả 422 (không phải 400 Zod mặc định) - xem utils/validation.ts parseOr422.
+export const cancelEventSchema = z.object({
+  reason: z
+    .string({ error: 'Vui lòng nhập lý do huỷ sự kiện' })
+    .trim()
+    .min(10, 'Lý do huỷ phải có ít nhất 10 ký tự')
+    .max(500, 'Lý do huỷ tối đa 500 ký tự'),
 });
 
 export type CreateEventInput = z.infer<typeof createEventSchema>;
 export type UpdateEventInput = z.infer<typeof updateEventSchema>;
 export type QueryEventsInput = z.infer<typeof queryEventsSchema>;
+export type QueryMyEventsInput = z.infer<typeof queryMyEventsSchema>;
+export type CancelEventInput = z.infer<typeof cancelEventSchema>;

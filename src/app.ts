@@ -1,9 +1,20 @@
 import express, { Request, Response, NextFunction } from 'express';
+import cors from 'cors';
 import apiV1Router from './routes';
+import { env } from './config/env';
 import { errorHandler } from './middlewares/error.middleware';
 import { AppError } from './utils/errors';
 
 const app = express();
+
+// CORS phải đứng TRƯỚC mọi handler: request preflight OPTIONS cần được trả lời trước khi
+// đi vào bất kỳ tầng xác thực hay parse body nào (API.md mục 1).
+app.use(
+  cors({
+    origin: env.CORS_ORIGIN.split(',').map((origin) => origin.trim()),
+    credentials: true,
+  })
+);
 
 // Middleware parse JSON body
 app.use(express.json());

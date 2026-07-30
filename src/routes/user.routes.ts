@@ -1,5 +1,6 @@
 import { Router } from 'express';
 import { UserController } from '../controllers/user.controller';
+import { TicketController } from '../controllers/ticket.controller';
 import {
   requireAuth,
   requireActive,
@@ -21,5 +22,9 @@ router.get(
   requireRole('student'),
   UserController.getMyFeedbacks
 );
+
+// FR-17: danh sách vé của chính Sinh viên. Handler nằm ở TicketController (nghiệp vụ vé)
+// nhưng mount dưới /users/me cho đúng đường dẫn API.md mục 4.
+router.get('/me/tickets', requireRole('student'), TicketController.listMine);
 
 export default router;

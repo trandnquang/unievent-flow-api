@@ -4,8 +4,11 @@ import {
   createEventSchema,
   updateEventSchema,
   queryEventsSchema,
+  queryMyEventsSchema,
+  cancelEventSchema,
 } from '../schemas/event.schema';
 import { AppError } from '../utils/errors';
+import { parseOr422 } from '../utils/validation';
 
 export class EventController {
   // Tạo sự kiện mới (POST /events - FR-08)
@@ -51,7 +54,8 @@ export class EventController {
     }
   }
 
-  // Danh sách sự kiện của organizer đang đăng nhập (GET /events/mine - FR-12)
+  // Sự kiện liên quan tới organizer đang đăng nhập (GET /events/mine - FR-12, BR-38).
+  // 3 nhánh: owned (có phân trang) + co_hosting + pending_invitations.
   public static async listMine(
     req: Request,
     res: Response,
@@ -62,17 +66,16 @@ export class EventController {
         throw new AppError(401, 'UNAUTHORIZED', 'Vui lòng đăng nhập');
       }
 
-      const page = req.query.page ? Number(req.query.page) : 1;
-      const limit = req.query.limit ? Number(req.query.limit) : 20;
-
-      const result = await EventService.getMyEvents(req.user.id, {
-        page,
-        limit,
-      });
+      const query = queryMyEventsSchema.parse(req.query);
+      const result = await EventService.getMyEvents(req.user.id, query);
 
       res.status(200).json({
         success: true,
-        data: { events: result.events },
+        data: {
+          owned: result.owned,
+          co_hosting: result.co_hosting,
+          pending_invitations: result.pending_invitations,
+        },
         meta: result.meta,
       });
     } catch (error) {
@@ -142,7 +145,24 @@ export class EventController {
         throw new AppError(400, 'BAD_REQUEST', 'Thiếu tham số eventId');
       }
 
-      const event = await EventService.cancelEvent(eventId);
+      if (!req.user) {
+        throw new AppError(401, 'UNAUTHORIZED', 'Vui lòng đăng nhập');
+      }
+
+      // BR-106: lý do huỷ bắt buộc 10-500 ký tự, thiếu/ngắn -> 422 CANCEL_REASON_REQUIRED
+      // (không phải 400 VALIDATION_ERROR mặc định của Zod).
+      // Dùng chung parseOr422 với luồng buộc huỷ FR-30 để 2 luồng huỷ nhất quán.
+      const input = parseOr422(
+        cancelEventSchema,
+        req.body,
+        'CANCEL_REASON_REQUIRED',
+        'Vui lòng nhập lý do huỷ sự kiện (10-500 ký tự)'
+      );
+      const event = await EventService.cancelEvent(
+        eventId,
+        req.user.id,
+        input.reason
+      );
 
       res.status(200).json({
         success: true,

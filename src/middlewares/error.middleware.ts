@@ -1,5 +1,6 @@
 import { Request, Response, NextFunction } from 'express';
 import { ZodError } from 'zod';
+import { MulterError } from 'multer';
 import { AppError } from '../utils/errors';
 
 // Middleware xử lý lỗi toàn cục theo định dạng chuẩn API.md mục 1.2
@@ -33,6 +34,22 @@ export const errorHandler = (
         code: err.code,
         message: err.message,
         ...(err.details ? { details: err.details } : {}),
+      },
+    });
+    return;
+  }
+
+  // Lỗi do multer khi nhận tệp tải lên (FR-40). Không có nhánh này thì file vượt dung
+  // lượng rơi vào fallback 500 thay vì 413 như BR-104 yêu cầu.
+  if (err instanceof MulterError) {
+    const isTooLarge = err.code === 'LIMIT_FILE_SIZE';
+    res.status(isTooLarge ? 413 : 422).json({
+      success: false,
+      error: {
+        code: isTooLarge ? 'FILE_TOO_LARGE' : 'INVALID_FILE_TYPE',
+        message: isTooLarge
+          ? 'Tệp ảnh vượt quá dung lượng cho phép.'
+          : 'Tệp tải lên không hợp lệ.',
       },
     });
     return;
