@@ -52,11 +52,17 @@ export class CheckinService {
     }
 
     // BR-60: luồng quét QR chỉ áp dụng cho sự kiện trực tiếp. Sự kiện trực tuyến dùng
-    // FR-36 (sinh viên tự xác nhận tham dự). Đây là lỗi HTTP thật, không phải `result`.
+    // FR-36 (sinh viên tự check-in khi bấm "Vào phòng họp"). Đây là lỗi HTTP thật, không
+    // phải `result`.
+    //
+    // Mã EVENT_NOT_IN_PERSON (⭐ tách ở v0.7.1) — KHÁC với EVENT_NOT_ONLINE của luồng tự
+    // check-in (BR-65). Hai ca ngược chiều nhau: ở đây từ chối vì sự kiện KHÔNG phải
+    // in_person, còn bên kia từ chối vì sự kiện KHÔNG phải online. Trước v0.7.1 cả hai
+    // dùng chung một mã nên giao diện rẽ nhánh theo `code` hiển thị sai thông điệp.
     if (event.location_type !== 'in_person') {
       throw new AppError(
         422,
-        'EVENT_NOT_ONLINE',
+        'EVENT_NOT_IN_PERSON',
         'Sự kiện trực tuyến không dùng luồng quét QR tại cổng.'
       );
     }
@@ -167,7 +173,10 @@ export class CheckinService {
     };
   }
 
-  // Sinh viên tự xác nhận tham dự sự kiện trực tuyến (FR-36).
+  // Sinh viên tự check-in sự kiện trực tuyến (FR-36).
+  // BR-107: sinh viên chỉ bấm MỘT nút "Vào phòng họp" — thao tác đó vừa mở join_url vừa gọi
+  // endpoint này, không còn bước xác nhận riêng. Bằng chứng tham dự là checkin_time do SERVER
+  // ghi khi hàm này chạy; KHÔNG nhận mốc thời gian nào do client gửi lên (body rỗng).
   // Luồng ĐỒNG BỘ: không có ràng buộc <1s như BR-60 nên ghi thẳng, không qua hàng đợi.
   public static async selfCheckin(ticketId: string, userId: string) {
     const ticket = await prisma.tickets.findUnique({
@@ -208,7 +217,9 @@ export class CheckinService {
 
     // BR-95 (Self Check-in Time Window Rule): sự kiện còn hiệu lực VÀ đang trong khung
     // [start_time − 15 phút, end_time + 30 phút]. Biên trước cho phép vào phòng sớm,
-    // biên sau cho phép xác nhận bù khi sự kiện kéo dài quá giờ.
+    // biên sau cho phép vào bù khi sự kiện kéo dài quá giờ. Vì mở link và được-tính-tham-dự
+    // nay là cùng một hành vi (BR-107), cửa sổ này bao trọn cả hai — không có trạng thái
+    // "đã mở phòng nhưng chưa được tính".
     const now = new Date();
     const opensAt = new Date(event.start_time.getTime() - 15 * 60 * 1000);
     const closesAt = new Date(event.end_time.getTime() + 30 * 60 * 1000);
@@ -217,7 +228,7 @@ export class CheckinService {
       throw new AppError(
         422,
         'SELF_CHECKIN_WINDOW_CLOSED',
-        'Chức năng xác nhận tham dự chỉ mở từ 15 phút trước khi sự kiện bắt đầu đến 30 phút sau khi kết thúc.'
+        'Nút vào phòng họp chỉ mở từ 15 phút trước khi sự kiện bắt đầu đến 30 phút sau khi kết thúc.'
       );
     }
 
@@ -225,7 +236,7 @@ export class CheckinService {
       throw new AppError(
         409,
         'ALREADY_CHECKED_IN',
-        'Bạn đã xác nhận tham dự sự kiện này rồi.'
+        'Bạn đã được ghi nhận tham dự sự kiện này rồi.'
       );
     }
 
@@ -233,7 +244,7 @@ export class CheckinService {
       throw new AppError(
         422,
         'TICKET_NOT_VALID',
-        'Vé này không còn hiệu lực để xác nhận tham dự.'
+        'Vé này không còn hiệu lực để vào phòng họp.'
       );
     }
 
@@ -249,7 +260,7 @@ export class CheckinService {
         throw new AppError(
           409,
           'ALREADY_CHECKED_IN',
-          'Bạn đã xác nhận tham dự sự kiện này rồi.'
+          'Bạn đã được ghi nhận tham dự sự kiện này rồi.'
         );
       }
 

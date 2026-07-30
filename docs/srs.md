@@ -2,7 +2,19 @@
 
 _Tài liệu chuẩn (single source of truth) của hệ thống UniEvent Flow, dùng làm ngữ cảnh cho Claude / Claude Code / Claude Design. Cấu trúc theo SRS v0.6.1; mọi sơ đồ được biểu diễn bằng mã Mermaid._
 
-_**Phiên bản: v0.7.0** — FR-01 → FR-42 (42 FR), 42 UC, 127 BR. Đồng bộ với API v0.5.0, ERD v0.4.1, SCHEMA v0.4.1._
+_**Phiên bản: v0.7.2** — FR-01 → FR-42 (42 FR), 42 UC, 127 BR. Đồng bộ với API v0.5.2, ERD v0.4.1, SCHEMA v0.4.1._
+
+> **Thay đổi v0.7.2 (chốt luồng tự check-in online — quyết định sản phẩm D1; không đổi số lượng FR/UC/BR, không đổi endpoint, không đổi mã lỗi, không đổi CSDL):** bỏ mô hình hai nút (“Mở phòng họp” + “Xác nhận tham dự”) của luồng FR-36. Nay chỉ còn **một hành động duy nhất “Vào phòng họp”**: bấm là vừa mở `join_url` vừa được ghi nhận tham dự.
+>
+> 1. **BR-107 viết lại** thành _Join-Link = Self-Checkin Trigger Rule_ (§3.4.5): mở `join_url` **chính là** hành vi ghi nhận tham dự; bằng chứng là mốc thời gian do **server** ghi khi endpoint được gọi, bỏ hẳn cơ chế client gửi mốc bấm-link của bản trước. Đoạn “giới hạn đã biết” (Assumption #12) giữ nguyên.
+> 2. **UC-29 đổi Trigger** và nhãn node N1 trong sơ đồ hoạt động; Pre/Post-condition, BR-95 và BR-66 **giữ nguyên**.
+> 3. **§2.2.4** — đổi nhãn nhánh `online` cho khớp: mở link và gọi tự check-in là **cùng một thao tác**.
+> 4. **§4.5.3** — thay placeholder bằng **mô hình tương tác** 4 trạng thái (`too_early` / `ready` / `checked_in` / `window_closed`).
+> 5. **MSG-44 đổi copy** theo mô hình một nút; mã `SELF_CHECKIN_WINDOW_CLOSED` (422) giữ nguyên.
+>
+> **Vì sao BR-95 không đổi:** do mở link và được-tính-tham-dự nay là cùng một sự kiện, cả hai cùng bị bao bởi cửa sổ `[start−15p, end+30p]` — đây vẫn là lằn ranh chống check-in sớm làm nhiễm dữ liệu tham dự và dữ liệu đầu vào của phân tích cảm xúc (FR-25). Không tồn tại trạng thái “đã mở phòng nhưng chưa được tính”.
+
+> **Thay đổi v0.7.1 (dọn nhất quán, không đổi nghiệp vụ, không đổi CSDL):** (1) cập nhật nốt 2 tham chiếu còn trỏ tới path check-in cũ — sequence diagram §2.6.3 và ma trận truy vết §5.4 hàng FR-19; (2) **chốt mục “chưa chốt” của v0.7.0**: tách `EVENT_NOT_ONLINE` thành hai mã cho hai ca ngược chiều — **`EVENT_NOT_IN_PERSON`** (422, mới) cho quét QR vào sự kiện online (BR-60, MSG-57), giữ `EVENT_NOT_ONLINE` (422) cho tự check-in vé của sự kiện in_person (BR-65, MSG-30).
 
 > **Thay đổi v0.7.0 (đồng bộ ngược sau khi hiện thực 6 nhóm cuối — Check-in, Người tham gia, Feedback&AI, Dashboard, Quản trị, Tiện ích. Toàn bộ 50/50 endpoint nay đã có mã nguồn; không đổi CSDL):**
 >
@@ -26,7 +38,7 @@ _**Phiên bản: v0.7.0** — FR-01 → FR-42 (42 FR), 42 UC, 127 BR. Đồng b�
 > 10. **Hai ràng buộc `CHECK` chỉ tồn tại ở tầng SQL** (`chk_checkin_method_organizer`, `rating BETWEEN 1 AND 5`) — Prisma không biểu diễn được nên tầng ứng dụng phải tự chặn, nếu không lỗi CSDL thô sẽ thành HTTP 500 (§2.6.1 mục 4).
 > 11. **View `v_event_registration_stats` không có trong `schema.prisma`** → mọi truy vấn phải dùng `$queryRaw` (§2.6.1 mục 5).
 > 12. **5 thông báo mới MSG-53→57** cho `CONTENT_TOO_LONG` và 4 giá trị `result` của luồng quét vé vốn chưa có thông báo tương ứng.
-> 13. **⚠️ Nêu vấn đề chưa chốt:** `EVENT_NOT_ONLINE` đang mang **hai nghĩa trái ngược** (quét QR vào sự kiện online vs tự check-in vé của sự kiện in_person) — xem ghi chú cuối §5.1, cần chốt ở đợt rà soát sau.
+> 13. **⚠️ Nêu vấn đề chưa chốt:** `EVENT_NOT_ONLINE` đang mang **hai nghĩa trái ngược** (quét QR vào sự kiện online vs tự check-in vé của sự kiện in_person) — xem ghi chú cuối §5.1. → ✅ **Đã chốt ở v0.7.1**: tách thành `EVENT_NOT_IN_PERSON` cho ca thứ nhất.
 
 > **Thay đổi v0.6.10 (đồng bộ ngược sau khi hiện thực Nhóm 3 — Đăng ký & Vé điện tử; không đổi phạm vi nghiệp vụ, không đổi CSDL):**
 >
@@ -529,7 +541,7 @@ _Hình 7: Activity Diagram — Module Đăng ký & Vé điện tử (thể hiệ
 
 ### 2.2.4 Check-in tại cổng sự kiện (Gate Check-in)
 
-Sự kiện in_person: quét QR → xác thực chữ ký JWT → **đặt khoá check-in nguyên tử trên Redis (BR-91)** để chốt kết quả hợp lệ/đã dùng ngay trong luồng đồng bộ (<1s) → ghi checkin_logs và cập nhật ticket.status bất đồng bộ. Sự kiện online: sinh viên tự bấm “Xác nhận tham dự” → ghi log với checkin_method=self, organizer_id=NULL.
+Sự kiện in_person: quét QR → xác thực chữ ký JWT → **đặt khoá check-in nguyên tử trên Redis (BR-91)** để chốt kết quả hợp lệ/đã dùng ngay trong luồng đồng bộ (<1s) → ghi checkin_logs và cập nhật ticket.status bất đồng bộ. Sự kiện online: sinh viên bấm “Vào phòng họp” — thao tác này VỪA mở join_url VỪA gọi endpoint tự check-in (BR-107), không còn bước xác nhận riêng → ghi log với checkin_method=self, organizer_id=NULL.
 
 ```mermaid
 flowchart TD
@@ -558,7 +570,7 @@ flowchart TD
     U -->|Khong sau khi retry| V[/Giai phong khoa checkin:ticketId de quet lai BR-94/]
     U -->|Co| W[(Da luu lich su check-in)]
 
-    B -->|online| X[SV bam mo join_url - ghi nhan thoi diem BR-107]
+    B -->|online| X[SV bam 'Vao phong hop' - mo join_url DONG THOI goi self-checkin BR-107]
     X --> Y{"BR-95: event active VA now trong [start-15p, end+30p]?"}
     Y -->|Ngoai khoang| Z[422 SELF_CHECKIN_WINDOW_CLOSED - MSG-44]
     Y -->|Trong khoang| AA{ticket.status = valid? BR-66}
@@ -1302,7 +1314,7 @@ sequenceDiagram
     participant Q as Job ghi nen
 
     BTC->>CAM: Huong camera vao ma QR
-    CAM->>API: POST /checkin/scan { qrToken }
+    CAM->>API: POST /events/:eventId/checkin/scan { qr_token }
 
     rect rgb(240, 245, 255)
     Note over API,PG: Duong dong bo - toan bo phai <1s (NFR-01)
@@ -2536,7 +2548,7 @@ flowchart TB
 | **Objective:**      | Cho phép Sinh viên tự xác nhận tham dự đối với sự kiện trực tuyến, thay thế cho việc quét QR tại cổng vốn không áp dụng được.                             |
 | ------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | **Actor:**          | Sinh viên.                                                                                                                                                |
-| **Trigger:**        | Sinh viên chọn “Xác nhận tham dự” trong lúc/trước sự kiện trực tuyến diễn ra.                                                                             |
+| **Trigger:**        | Sinh viên bấm “Vào phòng họp” (mở join_url) của sự kiện trực tuyến, trong khung giờ [start_time − 15 phút, end_time + 30 phút].                           |
 | **Pre-condition:**  | Sinh viên là chủ vé; event.location_type = online; event.status = active; ticket.status = valid; thời điểm hiện tại nằm trong cửa sổ tự check-in (BR-95). |
 | **Post-condition:** | ticket.status chuyển sang checked_in; điều kiện gửi feedback (UC-30) được thoả mãn giống như sự kiện trực tiếp.                                           |
 
@@ -2547,7 +2559,7 @@ flowchart TB
     START(( )) --> N1
     subgraph LU["Sinh viên"]
     direction TB
-        N1["(1) Bấm 'Xác nhận tham dự' (sự kiện online)"]
+        N1["(1) Bấm 'Vào phòng họp' → mở join_url + gọi self-checkin (sự kiện online)"]
     end
     subgraph LS["Hệ thống"]
     direction TB
@@ -2568,8 +2580,8 @@ flowchart TB
 | **Step** | **BR Code** | **Description**                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                       |
 | -------- | ----------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | (2)      | **BR-65**   | Event Type Guard Rule: POST /tickets/:ticketId/self-checkin chỉ hoạt động nếu event.location_type = online; gọi cho sự kiện in_person → lỗi HTTP 422 (MSG-30).                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                        |
-| (3)      | **BR-95**   | Self Check-in Time Window Rule: Chỉ chấp nhận tự check-in khi thoả cả hai điều kiện: (a) event.status = active; (b) thời điểm hiện tại nằm trong khoảng [event.start_time − 15 phút, event.end_time + 30 phút]. Ngoài khoảng hoặc sự kiện đã huỷ → HTTP 422 SELF*CHECKIN_WINDOW_CLOSED (MSG-44). Biên 15 phút trước cho phép sinh viên vào phòng họp trực tuyến sớm; biên 30 phút sau xử lý trường hợp quên bấm xác nhận trong lúc đang theo dõi. Vấn đề được xử lý: nếu không ràng buộc thời gian, sinh viên có thể bấm “Xác nhận tham dự” nhiều tuần trước khi sự kiện diễn ra, rồi gửi phản hồi (FR-23 chỉ yêu cầu ticket.status = checked_in) cho một sự kiện chưa xảy ra. Hệ quả không chỉ là số liệu tham dự sai mà còn làm nhiễm dữ liệu đầu vào của phân tích cảm xúc (FR-25) — tính năng AI được lấy làm điểm nhấn của đồ án. Đây cũng là câu hỏi gần như chắc chắn sẽ được đặt ra: *“hệ thống căn cứ vào đâu để khẳng định sinh viên thực sự tham dự sự kiện trực tuyến?”\_ |
-| (3)      | **BR-107**  | Join-Link Evidence Rule: Nút “Xác nhận tham dự” trên giao diện chỉ được kích hoạt sau khi sinh viên đã bấm mở [join_url] của sự kiện; hệ thống ghi nhận thời điểm bấm ở phía client và gửi kèm khi gọi endpoint self-checkin. Giới hạn đã biết, nêu rõ để không phóng đại: cơ chế này không chứng minh sinh viên thực sự theo dõi sự kiện — nó chỉ nâng rào cản từ “bấm một nút bất kỳ lúc nào” lên “phải mở đúng đường dẫn, trong đúng khung giờ”. Việc xác minh mức độ tham dự thực chất (thời lượng xem, tương tác) đòi hỏi tích hợp API của nền tảng hội nghị trực tuyến, nằm ngoài phạm vi 7 tuần — xem Assumption #12.                                                                                                                                                                                                                                                                                                                                                          |
+| (3)      | **BR-95**   | Self Check-in Time Window Rule: Chỉ chấp nhận tự check-in khi thoả cả hai điều kiện: (a) event.status = active; (b) thời điểm hiện tại nằm trong khoảng [event.start_time − 15 phút, event.end_time + 30 phút]. Ngoài khoảng hoặc sự kiện đã huỷ → HTTP 422 SELF*CHECKIN_WINDOW_CLOSED (MSG-44). Biên 15 phút trước cho phép sinh viên vào phòng họp trực tuyến sớm; biên 30 phút sau xử lý trường hợp quên bấm xác nhận trong lúc đang theo dõi. Vấn đề được xử lý: nếu không ràng buộc thời gian, sinh viên có thể bấm “Vào phòng họp” (và do đó được ghi nhận tham dự — BR-107) nhiều tuần trước khi sự kiện diễn ra, rồi gửi phản hồi (FR-23 chỉ yêu cầu ticket.status = checked_in) cho một sự kiện chưa xảy ra. Hệ quả không chỉ là số liệu tham dự sai mà còn làm nhiễm dữ liệu đầu vào của phân tích cảm xúc (FR-25) — tính năng AI được lấy làm điểm nhấn của đồ án. Đây cũng là câu hỏi gần như chắc chắn sẽ được đặt ra: *“hệ thống căn cứ vào đâu để khẳng định sinh viên thực sự tham dự sự kiện trực tuyến?”\_ |
+| (3)      | **BR-107**  | Join-Link = Self-Checkin Trigger Rule: Hành vi mở [join_url] CHÍNH LÀ hành vi ghi nhận tham dự — giao diện chỉ có MỘT hành động duy nhất “Vào phòng họp”, KHÔNG còn nút “Xác nhận tham dự” riêng. Khi sinh viên bấm, client mở [join_url] và ĐỒNG THỜI gọi POST /tickets/:ticketId/self-checkin. Bằng chứng tham dự là mốc thời gian do SERVER ghi tại thời điểm endpoint được gọi (checkin_logs.checkin_time), và mốc này bắt buộc nằm trong [start_time − 15 phút, end_time + 30 phút] theo BR-95. Hệ thống KHÔNG nhận mốc thời gian hay bằng chứng nào do client gửi lên — cơ chế “client ghi thời điểm bấm link rồi gửi kèm” của bản trước đã bị bỏ, vì dữ liệu do client tự khai không có giá trị chứng minh. Vì mở link và được-tính-tham-dự là cùng một sự kiện, nút “Vào phòng họp” chỉ bật trong đúng cửa sổ BR-95; ngoài khoảng thì không mở link được — không tồn tại trạng thái “đã mở phòng nhưng chưa được tính tham dự”. Giới hạn đã biết, nêu rõ để không phóng đại: cơ chế này không chứng minh sinh viên thực sự theo dõi sự kiện — nó chỉ nâng rào cản từ “bấm một nút bất kỳ lúc nào” lên “phải mở đúng đường dẫn, trong đúng khung giờ”. Việc xác minh mức độ tham dự thực chất (thời lượng xem, tương tác) đòi hỏi tích hợp API của nền tảng hội nghị trực tuyến, nằm ngoài phạm vi 7 tuần — xem Assumption #12.                                                                                                                                                                                                                                                                                                                                                          |
 | (5)      | **BR-66**   | Self Check-in Rule: Hệ thống ghi checkin_logs với organizer_id = NULL, checkin_method = self, cập nhật ticket.status = checked_in. Nhờ vậy FR-23 (điều kiện gửi feedback yêu cầu checked_in) vẫn nhất quán cho cả 2 loại sự kiện.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                     |
 
 ## 3.5 Phản hồi & Phân tích cảm xúc bằng AI
@@ -3298,7 +3310,22 @@ _[Nội dung mockup — ảnh thiết kế và bảng đặc tả component — 
 
 ### 4.5.3 Tự check-in sự kiện trực tuyến (Online Self Check-in)
 
-_[Nội dung mockup — ảnh thiết kế và bảng đặc tả component — sẽ được bổ sung ở bước thiết kế UI chi tiết tiếp theo.]_
+_[Ảnh thiết kế sẽ được bổ sung ở bước thiết kế UI chi tiết tiếp theo. Phần dưới đặc tả **mô hình tương tác** đã chốt — đây là ràng buộc thiết kế bắt buộc, không phải mockup minh hoạ.]_
+
+**Một hành động duy nhất.** Màn hình chi tiết vé của sự kiện trực tuyến chỉ có nút chính **“Vào phòng họp”**. KHÔNG có nút “Xác nhận tham dự” riêng: một lần bấm vừa mở đường dẫn phòng họp vừa ghi nhận tham dự (BR-107). Lý do bỏ mô hình hai nút của bản trước: sinh viên thường quên bước xác nhận thứ hai, khiến Ban tổ chức không biết ai đã thực sự vào phòng.
+
+| **Trạng thái**  | **Điều kiện**                                                      | **Hiển thị**                                          | **Hành vi khi bấm**                                                      |
+| --------------- | ------------------------------------------------------------------ | ----------------------------------------------------- | ------------------------------------------------------------------------ |
+| `too_early`     | Trước mốc [start_time − 15 phút]                                   | Nút **vô hiệu hoá** + đếm ngược “Mở từ HH:MM · dd/mm” | Không có (nút không bấm được)                                            |
+| `ready`         | Trong khoảng [start_time − 15p, end_time + 30p] và vé chưa tham dự | Nút **bật**, nhãn “Vào phòng họp”                     | Mở join_url **VÀ** gọi endpoint tự check-in — cùng một lần bấm           |
+| `checked_in`    | Vé đã ở trạng thái checked_in                                      | “Đã tham dự ✓” + liên kết phụ “Vào lại phòng họp”     | Liên kết phụ **chỉ mở lại join_url**, KHÔNG gọi lại endpoint tự check-in |
+| `window_closed` | Sau mốc [end_time + 30 phút] mà vé vẫn chưa tham dự                | Trạng thái đã đóng, **không còn nút**                 | Không có                                                                 |
+
+Ghi chú thiết kế:
+
+1. Bốn trạng thái trên **loại trừ lẫn nhau** — tại mỗi thời điểm màn hình chỉ ở đúng một trạng thái. Hai ranh giới `too_early` và `window_closed` chính là hai biên của cửa sổ BR-95, nên không tồn tại trường hợp “đã mở được phòng họp nhưng chưa được tính tham dự”.
+2. Nút **“Huỷ đăng ký”** (FR-34) vẫn hiển thị như cũ, không đổi hành vi.
+3. Tuân thủ quy tắc copy ở mục 4.7: chữ người dùng nhìn thấy không được chứa mã FR/BR/MSG hay tên cột CSDL (`join_url`) — các mã này trong bảng chỉ dùng để đặc tả cho lập trình viên.
 
 ## 4.6 Phản hồi & Phân tích cảm xúc bằng AI (Feedback & AI Sentiment)
 
@@ -3401,7 +3428,7 @@ _[Nội dung mockup — ảnh thiết kế và bảng đặc tả component — 
 | MSG-41           | Tạo tài khoản Ban tổ chức thành công. Thông tin đăng nhập đã được gửi qua email.                                                      | Thành công. Lưu ý: lỗi email trùng khi tạo tài khoản Organizer (FR-38) tái sử dụng chính MSG-05 (EMAIL_ALREADY_EXISTS), không có mã riêng.                                                                                          |
 | MSG-42           | Sự kiện này hiện không nhận đăng ký (đã bị huỷ hoặc đã bắt đầu).                                                                      | Lỗi nghiệp vụ (EVENT_NOT_REGISTRABLE, HTTP 422) —)                                                                                                                                                                                  |
 | MSG-43           | Đăng ký không thành công. Vé đã được hoàn lại, bạn có thể thử đăng ký lại.                                                            | Lỗi nghiệp vụ (REGISTRATION_FAILED) —). Hiển thị khi frontend poll GET /registrations/:id và nhận status = failed.                                                                                                                  |
-| MSG-44           | Chức năng xác nhận tham dự chỉ mở từ 15 phút trước khi sự kiện bắt đầu đến 30 phút sau khi kết thúc.                                  | Lỗi nghiệp vụ (SELF_CHECKIN_WINDOW_CLOSED, HTTP 422) —)                                                                                                                                                                             |
+| MSG-44 ⭐ v0.7.2 | Nút vào phòng họp chỉ mở từ 15 phút trước khi sự kiện bắt đầu đến 30 phút sau khi kết thúc.                                           | Lỗi nghiệp vụ (SELF_CHECKIN_WINDOW_CLOSED, HTTP 422) — ⭐ **v0.7.2**: đổi copy theo BR-107 mới (chỉ còn một nút “Vào phòng họp”, không còn nút xác nhận riêng); mã lỗi giữ nguyên                                                                                                                                                                             |
 | MSG-45           | Vé đã hết hiệu lực.                                                                                                                   | Kết quả check-in (expired_ticket) —)                                                                                                                                                                                                |
 | MSG-46           | Tệp ảnh vượt quá dung lượng cho phép (tối đa 5 MB).                                                                                   | Lỗi validation (FILE_TOO_LARGE, HTTP 413) —)                                                                                                                                                                                        |
 | MSG-47           | Định dạng tệp không được hỗ trợ. Chỉ chấp nhận JPG, PNG hoặc WEBP.                                                                    | Lỗi validation (INVALID_FILE_TYPE, HTTP 422) —)                                                                                                                                                                                     |
@@ -3414,13 +3441,14 @@ _[Nội dung mockup — ảnh thiết kế và bảng đặc tả component — 
 | MSG-54 ⭐ v0.7.0 | Vé không hợp lệ.                                                                                                                     | Kết quả quét (`result = invalid_signature`, HTTP 200) — BR-59. Chữ ký JWT sai hoặc vé không còn trong sổ cái.                                                                                                                       |
 | MSG-55 ⭐ v0.7.0 | Vé thuộc sự kiện khác.                                                                                                               | Kết quả quét (`result = event_mismatch`, HTTP 200) — vé thật nhưng `event_id` trong vé khác sự kiện đang quét.                                                                                                                      |
 | MSG-56 ⭐ v0.7.0 | Vé đã bị huỷ.                                                                                                                        | Kết quả quét (`result = cancelled_ticket`, HTTP 200) — BR-109: trạng thái vé tra từ bảng `tickets`, không suy từ chữ ký.                                                                                                            |
-| MSG-57 ⭐ v0.7.0 | Sự kiện trực tuyến không dùng luồng quét QR tại cổng.                                                                                 | Lỗi nghiệp vụ (EVENT_NOT_ONLINE, HTTP 422) — BR-60, hướng người dùng sang FR-36. ⚠️ Xem ghi chú v0.7.0 về việc mã này đang mang **hai nghĩa trái ngược** (mục 5.3).                                                                 |
+| MSG-57 ⭐ v0.7.0 | Sự kiện trực tuyến không dùng luồng quét QR tại cổng.                                                                                 | Lỗi nghiệp vụ (**EVENT_NOT_IN_PERSON**, HTTP 422) — BR-60, hướng người dùng sang FR-36. ⭐ **v0.7.1**: mã đổi từ `EVENT_NOT_ONLINE` sang mã riêng để không lẫn với MSG-30 (ca ngược chiều, BR-65). |
 
-> ⭐ **Ghi chú v0.7.0 — `EVENT_NOT_ONLINE` đang mang HAI nghĩa trái ngược nhau.** Mã này hiện được dùng ở hai chỗ:
-> (a) quét QR tại cổng (`POST /events/:eventId/checkin/scan`) vào một sự kiện **trực tuyến** → từ chối vì luồng quét chỉ áp dụng cho `in_person` (BR-60);
-> (b) tự check-in (`POST /tickets/:ticketId/self-checkin`) một vé của sự kiện **trực tiếp** → từ chối vì luồng này chỉ dành cho `online` (FR-36).
+> ✅ **Ghi chú v0.7.1 — đã tách mã lỗi cho hai ca ngược chiều nhau.** Trước v0.7.1, `EVENT_NOT_ONLINE` được dùng cho cả hai tình huống dưới đây; tên mã chỉ đúng với ca (b) nên giao diện rẽ nhánh theo `code` hiển thị sai thông điệp ở ca (a). Nay mỗi ca một mã riêng:
 >
-> Tên mã chỉ đúng với vế (b). Frontend rẽ nhánh theo `code` sẽ hiển thị sai thông điệp ở một trong hai trường hợp. **Cần chốt ở đợt rà soát sau**: hoặc tách thành hai mã (đề xuất `EVENT_NOT_IN_PERSON` cho (a), giữ `EVENT_NOT_ONLINE` cho (b)), hoặc đổi sang một mã trung tính kiểu `CHECKIN_METHOD_NOT_ALLOWED` dùng chung. Hiện thực đang dùng chung một mã với hai `message` khác nhau — tạm đủ dùng nhưng không phải giải pháp cuối.
+> | Ca | Endpoint | Điều kiện từ chối | Mã lỗi | Thông báo |
+> | --- | --- | --- | --- | --- |
+> | (a) | `POST /events/:eventId/checkin/scan` | sự kiện **không phải** `in_person` (BR-60) | **`EVENT_NOT_IN_PERSON`** ⭐ mới | MSG-57 |
+> | (b) | `POST /tickets/:ticketId/self-checkin` | sự kiện **không phải** `online` (BR-65) | `EVENT_NOT_ONLINE` giữ nguyên | MSG-30 |
 
 ## 5.2 Dữ liệu tham chiếu (Reference Data)
 
@@ -3503,7 +3531,7 @@ Bảng dưới đây ánh xạ toàn bộ 42 FR sang các thành phần đặc t
 | **FR-16**             | Gửi vé qua email bất đồng bộ                 | UC-20        | BR-52                                                       | —                      | `(worker) sinh vé + gửi email`                           | — (nền)                  | TC-16-01→nn   |
 | **FR-17**             | Xem danh sách vé cá nhân                     | UC-21        | BR-53                                                       | —                      | `GET /users/me/tickets`                                  | 4.4.2                    | TC-17-01→nn   |
 | **FR-18**             | Xem chi tiết một vé                          | UC-22        | BR-54                                                       | —                      | `GET /tickets/:id`                                       | 4.4.3                    | TC-18-01→nn   |
-| **FR-19**             | Xác thực & giải mã QR khi check-in           | UC-25        | BR-59, BR-60, BR-91, BR-61                                  | —                      | `POST /checkin/scan`                                     | 4.5.1                    | TC-19-01→nn   |
+| **FR-19**             | Xác thực & giải mã QR khi check-in           | UC-25        | BR-59, BR-60, BR-91, BR-61                                  | MSG-54, MSG-55, MSG-56, MSG-57 | `POST /events/:eventId/checkin/scan`                     | 4.5.1                    | TC-19-01→nn   |
 | **FR-20**             | Ghi nhận check-in / CheckinLog               | UC-26        | BR-62, BR-94                                                | —                      | `(worker) ghi checkin_logs`                              | — (nền)                  | TC-20-01→nn   |
 | **FR-21**             | Xem lịch sử check-in                         | UC-27        | BR-63                                                       | —                      | `GET /events/:id/checkins`                               | 4.5.2                    | TC-21-01→nn   |
 | **FR-22**             | Xuất danh sách CSV                           | UC-28        | BR-64                                                       | —                      | `GET /events/:eventId/checkins/export`                   | 4.5.2                    | TC-22-01→nn   |
@@ -3578,11 +3606,11 @@ Mục 1.1 nêu rằng SRS là cơ sở xây dựng tiêu chí nghiệm thu. Mụ
 
 ### 5.5.5 FR-36 — Tự check-in sự kiện trực tuyến
 
-| **Mã**   | **Tiêu chí**                                                                                                                                                                                                              |
-| -------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| AC-36-01 | **Given** thời điểm hiện tại sớm hơn `start_time` 20 phút, **when** Sinh viên bấm xác nhận tham dự, **then** nhận HTTP 422 SELF_CHECKIN_WINDOW_CLOSED.                                                                    |
-| AC-36-02 | **Given** thời điểm hiện tại nằm giữa `start_time` và `end_time`, **when** Sinh viên bấm xác nhận, **then** `ticket.status = checked_in` và `checkin_logs` có bản ghi với `organizer_id = NULL`, `checkin_method = self`. |
-| AC-36-03 | **Given** sự kiện có `location_type = in_person`, **when** gọi endpoint tự check-in, **then** nhận HTTP 422 EVENT_NOT_ONLINE.                                                                                             |
+| **Mã**   | **Tiêu chí**                                                                                                                                                                                                                     |
+| -------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| AC-36-01 | **Given** thời điểm hiện tại sớm hơn `start_time` 20 phút, **when** endpoint tự check-in bị gọi (giao diện đã vô hiệu hoá nút “Vào phòng họp” ở trạng thái này — BR-107), **then** nhận HTTP 422 SELF_CHECKIN_WINDOW_CLOSED.     |
+| AC-36-02 | **Given** thời điểm hiện tại nằm giữa `start_time` và `end_time`, **when** Sinh viên bấm “Vào phòng họp”, **then** `ticket.status = checked_in` và `checkin_logs` có bản ghi với `organizer_id = NULL`, `checkin_method = self`. |
+| AC-36-03 | **Given** sự kiện có `location_type = in_person`, **when** gọi endpoint tự check-in, **then** nhận HTTP 422 EVENT_NOT_ONLINE.                                                                                                    |
 
 ### 5.5.6 FR-29 — Vô hiệu hoá tài khoản (thu hồi quyền tức thời)
 

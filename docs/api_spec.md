@@ -1,7 +1,13 @@
 # THIẾT KẾ API — UniEvent Flow
 
 _Tài liệu đặc tả REST API — dùng làm API contract giữa Backend (Quang) và Frontend (Dũng)_
-_Phiên bản: 0.5.0 — Dựa trên SRS v0.7.0 (FR-01 → FR-42, 42 UC, 127 BR), ERD.md v0.4.1 và SCHEMA.sql v0.4.1_
+_Phiên bản: 0.5.2 — Dựa trên SRS v0.7.2 (FR-01 → FR-42, 42 UC, 127 BR), ERD.md v0.4.1 và SCHEMA.sql v0.4.1_
+
+> **Thay đổi v0.5.2 (làm rõ đặc tả `POST /tickets/:ticketId/self-checkin` theo BR-107 mới — KHÔNG đổi path, KHÔNG đổi request/response shape, KHÔNG đổi mã lỗi, KHÔNG đổi CSDL):** (1) ghi rõ **request body rỗng**: endpoint không nhận field nào, đặc biệt **không nhận mốc thời gian hay bằng chứng do client gửi** — client mở `join_url` chính là cái kích hoạt lời gọi này, `checkin_time` do server ghi; (2) làm rõ ca **“vào lại phòng họp khi đã tham dự”**: frontend không gọi lại endpoint, nếu vẫn gọi → **409 `ALREADY_CHECKED_IN`** (đã có sẵn); (3) chép rõ **thứ tự 4 guard** để frontend map đúng màn lỗi.
+>
+> **Vì sao là patch chứ không phải minor:** request contract **không thay đổi** — cả trước và sau đều là body rỗng. Đặc tả cũ chưa từng công bố field bằng chứng client nào, và mã nguồn cũng chưa từng hiện thực (controller không đọc `req.body`, không có Zod schema cho endpoint này). Đây là **bổ sung mô tả**, không phải gỡ field khỏi contract.
+
+> **Thay đổi v0.5.1 (dọn nhất quán, không đổi path/response shape, không đổi CSDL):** (1) cập nhật nốt 2 câu quy phạm còn trỏ tới `/checkin/scan` cũ (§0c ghi chú `result`, §14); (2) **chốt mục “chưa chốt” của v0.5.0**: tách mã lỗi — **`EVENT_NOT_IN_PERSON`** (422, mới) cho quét QR vào sự kiện online (BR-60), giữ `EVENT_NOT_ONLINE` (422) cho tự check-in vé của sự kiện in_person (BR-65). Xem bảng đối chiếu cuối §5.
 
 > **Thay đổi v0.5.0 (Giai đoạn cuối — đồng bộ ngược sau khi hiện thực 6 nhóm còn lại: Check-in, Người tham gia, Feedback&AI, Dashboard, Quản trị, Tiện ích. **Toàn bộ 50/50 endpoint nay đã có mã nguồn**; không đụng SCHEMA/ERD):**
 >
@@ -17,9 +23,9 @@ _Phiên bản: 0.5.0 — Dựa trên SRS v0.7.0 (FR-01 → FR-42, 42 UC, 127 BR)
 > 5. **§9 — bảng ánh xạ lỗi tầng multipart**: vượt dung lượng → **413 `FILE_TOO_LARGE`**, lỗi multipart khác → 422, không gửi tệp → 400. Thiếu nhánh này thì tệp quá lớn trả 500.
 > 6. **§6 — `job_id` hiện KHÔNG tra cứu được**: không có endpoint poll trạng thái job phân tích (khác FR-14). Nêu rõ frontend theo dõi bằng `GET /feedbacks/summary`; cần chốt hướng xử lý ở đợt sau.
 > 7. **§11 — số worker nền 2 → 5** (`emailWorker`, `processRegistration`, `sendEventReminder`, `writeCheckinLog`, `analyzeSentiment`).
-> 8. **Mã lỗi mới được ghi nhận**: `ALREADY_CHECKED_IN` (409), `TICKET_NOT_VALID` (422), `TICKET_NOT_FOUND` (404), `CONTENT_TOO_LONG` (400, MSG-53), `SENTIMENT_UNAVAILABLE` (503).
+> 8. **Mã lỗi mới được ghi nhận**: `ALREADY_CHECKED_IN` (409), `TICKET_NOT_VALID` (422), `TICKET_NOT_FOUND` (404), `CONTENT_TOO_LONG` (400, MSG-53), `SENTIMENT_UNAVAILABLE` (503), `EVENT_NOT_IN_PERSON` (422 — bổ sung ở v0.5.1).
 > 9. **Chốt nhà cung cấp dịch vụ ngoài**: LLM = **Google Gemini**, lưu trữ ảnh = **Cloudinary** (SRS Assumption #13 trước đây để ngỏ hai lựa chọn).
-> 10. **⚠️ Nêu vấn đề chưa chốt**: `EVENT_NOT_ONLINE` đang mang **hai nghĩa trái ngược** (§5) — cần tách mã ở đợt rà soát sau.
+> 10. **⚠️ Nêu vấn đề chưa chốt**: `EVENT_NOT_ONLINE` đang mang **hai nghĩa trái ngược** (§5). → ✅ **Đã chốt ở v0.5.1**: tách thành `EVENT_NOT_IN_PERSON` cho ca quét QR.
 
 > **Thay đổi v0.4.8 (Giai đoạn 3 — đồng bộ ngược sau khi hiện thực Nhóm 3 "Đăng ký & Vé điện tử"):**
 >
@@ -110,7 +116,7 @@ Mã lỗi mới: `CO_HOST_ALREADY_ACCEPTED` (409), `CANNOT_INVITE_SELF` (422). M
 | Auth & Account                            | `PATCH /users/me` thêm trường `clubName` (chỉ áp dụng khi role=organizer, BR-17); `GET /organizers/:userId` trả thêm `clubName` (BR-26).                                                                                                                                   |
 | `GET /events/mine`                        | Chốt hình dạng response là **hai mảng tách rời** `{owned, coHosting, pendingInvitations}` (khớp v0.3.0), khắc phục mâu thuẫn với mô tả "mảng phẳng kèm myRole" từng có ở SRS.                                                                                              |
 
-Mã lỗi mới: `REGISTRATION_FAILED` (nghiệp vụ, hiển thị khi poll), `SELF_CHECKIN_WINDOW_CLOSED` (422), `FILE_TOO_LARGE` (413), `INVALID_FILE_TYPE` (422), `UPLOAD_FAILED` (502). Giá trị `result` mới cho `/checkin/scan`: `expired_ticket`.
+Mã lỗi mới: `REGISTRATION_FAILED` (nghiệp vụ, hiển thị khi poll), `SELF_CHECKIN_WINDOW_CLOSED` (422), `FILE_TOO_LARGE` (413), `INVALID_FILE_TYPE` (422), `UPLOAD_FAILED` (502). Giá trị `result` mới cho `/events/:eventId/checkin/scan`: `expired_ticket`.
 
 **Tổng: 40 FR → 46 endpoint REST** (từ 38 FR/42 endpoint: +2 FR, +4 endpoint — `/admin/users`, `/admin/events`, `/uploads/image`, và tách `GET /events/mine` giữ nguyên) + 1 worker nền (FR-35).
 
@@ -474,10 +480,10 @@ Job email chỉ mang `ticket_id`; nội dung và người nhận được truy v
 
 | Method | Endpoint                           | Auth                                      | FR        | Mô tả                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                |
 | ------ | ---------------------------------- | ----------------------------------------- | --------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| POST   | `/events/:eventId/checkin/scan` ⭐ **đổi path v0.5.0** | Organizer + **Owner-or-CoHost** ⭐ v0.3.0 | FR-19/20  | Body: `{qr_token}` → xác thực chữ ký JWT + kiểm `exp` (BR-99), trả kết quả **đồng bộ** trong <1s. ⭐ **v1.0 (BR-91)**: trước khi trả kết quả, đặt khoá `SET checkin:{ticketId} NX EX 86400` trên Redis để chốt nguyên tử — hai lần quét cùng vé chỉ 1 lần nhận `valid`, lần sau `already_checked_in`. Ghi `checkin_logs` + đổi `ticket.status` làm **bất đồng bộ** sau khi trả response (BR-62); nếu ghi thất bại sau retry → giải phóng khoá để quét lại (BR-94). **Chỉ áp dụng cho `location_type=in_person`** (BR-60) — sự kiện `online` trả **422 `EVENT_NOT_ONLINE`**. Dùng `requireOwnerOrCoHost`. ⭐ **v0.5.0 — vì sao đổi path:** bản trước là `POST /checkin/scan` với body chỉ có `{qrToken}`, nhưng cả `requireOwnerOrCoHost` (BR-63) lẫn bước so khớp `event_mismatch` (sơ đồ SRS §2.2.4) đều **cần eventId**, mà endpoint cũ không có nguồn nào cung cấp — nói cách khác endpoint như đặc tả cũ **không hiện thực được**. Đưa eventId lên đường dẫn giữ được middleware sẵn có nguyên vẹn |
+| POST   | `/events/:eventId/checkin/scan` ⭐ **đổi path v0.5.0** | Organizer + **Owner-or-CoHost** ⭐ v0.3.0 | FR-19/20  | Body: `{qr_token}` → xác thực chữ ký JWT + kiểm `exp` (BR-99), trả kết quả **đồng bộ** trong <1s. ⭐ **v1.0 (BR-91)**: trước khi trả kết quả, đặt khoá `SET checkin:{ticketId} NX EX 86400` trên Redis để chốt nguyên tử — hai lần quét cùng vé chỉ 1 lần nhận `valid`, lần sau `already_checked_in`. Ghi `checkin_logs` + đổi `ticket.status` làm **bất đồng bộ** sau khi trả response (BR-62); nếu ghi thất bại sau retry → giải phóng khoá để quét lại (BR-94). **Chỉ áp dụng cho `location_type=in_person`** (BR-60) — sự kiện `online` trả **422 `EVENT_NOT_IN_PERSON`** (⭐ **tách mã v0.7.1**, trước dùng chung `EVENT_NOT_ONLINE` với luồng tự check-in). Dùng `requireOwnerOrCoHost`. ⭐ **v0.5.0 — vì sao đổi path:** bản trước là `POST /checkin/scan` với body chỉ có `{qrToken}`, nhưng cả `requireOwnerOrCoHost` (BR-63) lẫn bước so khớp `event_mismatch` (sơ đồ SRS §2.2.4) đều **cần eventId**, mà endpoint cũ không có nguồn nào cung cấp — nói cách khác endpoint như đặc tả cũ **không hiện thực được**. Đưa eventId lên đường dẫn giữ được middleware sẵn có nguyên vẹn |
 | GET    | `/events/:eventId/checkins`        | Organizer + **Owner-or-CoHost** ⭐ v0.3.0 | FR-21     | 200 danh sách check-in (gồm cả `checkin_method` để phân biệt quét tại cổng và tự check-in online)                                                                                                                                                                                                                                                                                                                                                                                                                                                    |
 | GET    | `/events/:eventId/checkins/export` | Organizer + **Owner-or-CoHost** ⭐ v0.3.0 | FR-22     | 200, `Content-Type: text/csv` — xuất file trực tiếp, không cần lưu file trung gian                                                                                                                                                                                                                                                                                                                                                                                                                                                                   |
-| POST   | `/tickets/:ticketId/self-checkin`  | Student + Owner                           | **FR-36** | Chỉ hoạt động nếu `event.location_type=online` (ngược lại 422 `EVENT_NOT_ONLINE`). ⭐ **v1.0 (BR-95)**: chỉ chấp nhận khi `event.status=active` VÀ thời điểm hiện tại trong khoảng **[start_time − 15p, end_time + 30p]**; ngoài khoảng → 422 `SELF_CHECKIN_WINDOW_CLOSED`. Ghi `checkin_logs` với `organizer_id=NULL, checkin_method=self`, đổi `ticket.status=checked_in` → 200 `{ticket}`                                                                                                                                                         |
+| POST   | `/tickets/:ticketId/self-checkin`  | Student + Owner                           | **FR-36** | ⭐ **v0.5.2 — Request body: RỖNG** (`{}` hoặc không gửi body); endpoint **không nhận field nào**. Theo **BR-107** (SRS §3.4.5): việc client mở `join_url` chính là hành vi kích hoạt lời gọi này — frontend chỉ có một nút “Vào phòng họp”, bấm là vừa mở link vừa gọi endpoint. Server tự ghi `checkin_logs.checkin_time`; **không nhận mốc thời gian / bằng chứng nào do client gửi lên**. Chỉ hoạt động nếu `event.location_type=online` (ngược lại 422 `EVENT_NOT_ONLINE` — BR-65; ⭐ **v0.7.1** mã này nay CHỈ còn dùng cho ca này). ⭐ **v1.0 (BR-95)**: chỉ chấp nhận khi `event.status=active` VÀ thời điểm hiện tại trong khoảng **[start_time − 15p, end_time + 30p]**; ngoài khoảng → 422 `SELF_CHECKIN_WINDOW_CLOSED`. Ghi `checkin_logs` với `organizer_id=NULL, checkin_method=self`, đổi `ticket.status=checked_in` → 200 `{ticket}`                                                                                                                                                         |
 
 **Response `/events/:eventId/checkin/scan`:**
 
@@ -512,9 +518,27 @@ Các giá trị `result`: `valid` | `already_checked_in` | `invalid_signature` |
 
 Không có khái niệm `result` như luồng quét QR vì đây là hành động chủ động của chính sinh viên (không có khả năng "vé giả"/"nhầm sự kiện" như khi tổ chức quét cho người khác) — chỉ cần 200 hoặc lỗi nghiệp vụ rõ ràng.
 
-**Lỗi đặc thù nhóm này:** `EVENT_NOT_ONLINE` (422), `SELF_CHECKIN_WINDOW_CLOSED` (422, ⭐ mới v1.0), `TICKET_NOT_FOUND` (404 — dùng thay 403 khi truy cập vé của người khác, để không lộ sự tồn tại), `ALREADY_CHECKED_IN` (409 ⭐ mới v0.5.0 — tự check-in lần hai), `TICKET_NOT_VALID` (422 ⭐ mới v0.5.0 — vé `cancelled` khi tự check-in). Ngoài ra dùng chung `result` codes ở trên cho luồng quét QR.
+⭐ **v0.5.2 — ca "vào lại phòng họp khi đã tham dự".** Sau khi vé đã `checked_in`, màn hình hiển thị liên kết phụ "Vào lại phòng họp" (SRS §4.5.3). Liên kết này **chỉ mở lại `join_url`, frontend KHÔNG gọi lại endpoint** — tham dự đã được ghi nhận ở lần bấm đầu. Nếu vì lý do nào đó endpoint vẫn bị gọi lại, backend trả **409 `ALREADY_CHECKED_IN`** (hành vi đã có sẵn, không đổi).
 
-> ⚠️ **v0.5.0 — `EVENT_NOT_ONLINE` đang mang HAI nghĩa trái ngược:** (a) quét QR vào sự kiện **trực tuyến** → từ chối vì luồng quét chỉ cho `in_person` (BR-60); (b) tự check-in vé của sự kiện **trực tiếp** → từ chối vì luồng này chỉ cho `online`. Tên mã chỉ đúng với vế (b), nên frontend rẽ nhánh theo `code` sẽ hiển thị sai thông điệp ở một trong hai ca. Hiện thực tạm dùng chung một mã với hai `message` khác nhau; **cần chốt ở đợt rà soát sau** — đề xuất tách `EVENT_NOT_IN_PERSON` cho (a).
+⭐ **v0.5.2 — thứ tự 4 guard (chốt, không đổi).** Backend kiểm theo đúng trình tự dưới đây; frontend rẽ nhánh màn lỗi theo `error.code`:
+
+| # | **Guard**                    | **Điều kiện từ chối**                                         | **Kết quả**                                                                                                 |
+| - | ---------------------------- | ------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------- |
+| 1 | **Ownership**                | Vé không tồn tại **hoặc** không thuộc `req.user`              | **404 `TICKET_NOT_FOUND`** — dùng 404 thay 403 để không lộ sự tồn tại của vé người khác                     |
+| 2 | **Loại sự kiện** (BR-65)     | `event.location_type ≠ online`                                | **422 `EVENT_NOT_ONLINE`** (MSG-30)                                                                         |
+| 3 | **Cửa sổ thời gian** (BR-95) | `event.status ≠ active` **hoặc** `now ∉ [start−15p, end+30p]` | **422 `SELF_CHECKIN_WINDOW_CLOSED`** (MSG-44)                                                               |
+| 4 | **Trạng thái vé**            | `checked_in` / `cancelled`                                    | `valid` → **200 OK**; `checked_in` → **409 `ALREADY_CHECKED_IN`**; `cancelled` → **422 `TICKET_NOT_VALID`** |
+
+Thứ tự này có chủ đích: kiểm quyền sở hữu trước để không rò rỉ thông tin vé của người khác qua các mã lỗi phía sau; kiểm cửa sổ BR-95 **trước** trạng thái vé để sinh viên bấm ngoài giờ luôn nhận đúng thông điệp "chưa tới giờ / đã đóng" thay vì thông điệp về trạng thái vé.
+
+**Lỗi đặc thù nhóm này:** `EVENT_NOT_IN_PERSON` (422, ⭐ mới v0.7.1 — quét QR vào sự kiện online, BR-60), `EVENT_NOT_ONLINE` (422 — tự check-in vé của sự kiện in_person, BR-65), `SELF_CHECKIN_WINDOW_CLOSED` (422, ⭐ mới v1.0), `TICKET_NOT_FOUND` (404 — dùng thay 403 khi truy cập vé của người khác, để không lộ sự tồn tại), `ALREADY_CHECKED_IN` (409 ⭐ mới v0.5.0 — tự check-in lần hai), `TICKET_NOT_VALID` (422 ⭐ mới v0.5.0 — vé `cancelled` khi tự check-in). Ngoài ra dùng chung `result` codes ở trên cho luồng quét QR.
+
+> ✅ **v0.7.1 — đã tách mã lỗi.** Trước đây `EVENT_NOT_ONLINE` mang hai nghĩa trái ngược nên frontend rẽ nhánh theo `code` hiển thị sai thông điệp ở một trong hai ca. Nay tách rõ:
+>
+> | Ca | Endpoint | Điều kiện từ chối | Mã lỗi |
+> | --- | --- | --- | --- |
+> | (a) | `POST /events/:eventId/checkin/scan` | sự kiện **không phải** `in_person` (BR-60) | **`EVENT_NOT_IN_PERSON`** (422, mới) |
+> | (b) | `POST /tickets/:ticketId/self-checkin` | sự kiện **không phải** `online` (BR-65) | `EVENT_NOT_ONLINE` (422, giữ nguyên) |
 
 ---
 
@@ -724,7 +748,7 @@ Kết quả: Swagger UI phục vụ tại `GET /api-docs` (tương đương `/sw
 
 ## 14. Ghi chú cho buổi bảo vệ
 
-Hai điểm kỹ thuật khó nhất của đề tài (chống oversell qua Redis atomic decrement, check-in <1s qua JWT tự xác thực) đều được thể hiện rõ trong thiết kế API ở mục 4 và mục 5 — có thể dùng trực tiếp 2 sequence đó làm slide giải thích kiến trúc khi phản biện. Lưu ý riêng cho phần mở rộng 9 FR mới: NFR-01 (<1s) **chỉ áp dụng cho `/checkin/scan`** (luồng in_person), không áp dụng cho `/tickets/:ticketId/self-checkin` (luồng online, không có ràng buộc "cổng" vật lý) — cần nói rõ điểm này nếu hội đồng hỏi về hiệu năng của toàn bộ nhóm check-in.
+Hai điểm kỹ thuật khó nhất của đề tài (chống oversell qua Redis atomic decrement, check-in <1s qua JWT tự xác thực) đều được thể hiện rõ trong thiết kế API ở mục 4 và mục 5 — có thể dùng trực tiếp 2 sequence đó làm slide giải thích kiến trúc khi phản biện. Lưu ý riêng cho phần mở rộng 9 FR mới: NFR-01 (<1s) **chỉ áp dụng cho `/events/:eventId/checkin/scan`** (luồng in_person), không áp dụng cho `/tickets/:ticketId/self-checkin` (luồng online, không có ràng buộc "cổng" vật lý) — cần nói rõ điểm này nếu hội đồng hỏi về hiệu năng của toàn bộ nhóm check-in.
 
 **⭐ Ghi chú thêm cho v0.3.0 (rà soát scope 21/07/2026):**
 

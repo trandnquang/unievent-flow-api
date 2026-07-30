@@ -1,6 +1,6 @@
 -- ============================================================================
 -- UniEvent Flow — Database Schema (PostgreSQL)
--- Nguồn: ERD.md v0.4.1 + SRS v0.7.0 (42 FR, 42 UC, 127 BR) + API.md v0.5.0
+-- Nguồn: ERD.md v0.4.1 + SRS v0.7.2 (42 FR, 42 UC, 127 BR) + API.md v0.5.2
 -- Phiên bản schema: v0.4.1
 -- Ngày cập nhật: 30/07/2026
 --

@@ -97,7 +97,10 @@ export class CheckinController {
     }
   }
 
-  // Sinh viên tự xác nhận tham dự (POST /tickets/:ticketId/self-checkin - FR-36)
+  // Sinh viên bấm "Vào phòng họp" (POST /tickets/:ticketId/self-checkin - FR-36).
+  // BR-107: mở join_url ĐỒNG THỜI ghi nhận tham dự — một hành động duy nhất ở client.
+  // Body RỖNG có chủ đích: không nhận mốc thời gian/bằng chứng từ client nên không cần
+  // Zod schema; mọi dữ kiện lấy từ params + req.user, checkin_time do server ghi.
   public static async selfCheckin(
     req: Request,
     res: Response,
