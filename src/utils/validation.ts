@@ -13,12 +13,26 @@ export const parseOr422 = <T extends z.ZodType>(
   data: unknown,
   code: string,
   message: string
+): z.infer<T> => parseOrCode(schema, data, 422, code, message);
+
+// Bản tổng quát của parseOr422: giữ nguyên hình dạng details[] nhưng cho chọn HTTP status.
+//
+// Cần thiết vì không phải mã lỗi riêng nào cũng là 422. API.md mục 6 xếp RATING_REQUIRED và
+// CONTENT_TOO_LONG (MSG-53) vào 400 — sai CÚ PHÁP đầu vào, không phải vi phạm business rule
+// — nhưng vẫn đòi mã riêng để frontend rẽ nhánh theo `code` (mục 1.2), không gộp chung vào
+// VALIDATION_ERROR.
+export const parseOrCode = <T extends z.ZodType>(
+  schema: T,
+  data: unknown,
+  statusCode: number,
+  code: string,
+  message: string
 ): z.infer<T> => {
   const result = schema.safeParse(data);
 
   if (!result.success) {
     throw new AppError(
-      422,
+      statusCode,
       code,
       message,
       result.error.issues.map((issue) => ({

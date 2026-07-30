@@ -1,7 +1,7 @@
 import { Request, Response, NextFunction } from 'express';
 import { FeedbackService } from '../services/feedback.service';
 import {
-  createFeedbackSchema,
+  parseCreateFeedback,
   queryEventFeedbacksSchema,
 } from '../schemas/feedback.schema';
 import { AppError } from '../utils/errors';
@@ -33,9 +33,9 @@ export class FeedbackController {
       const eventId = getParam(req, 'eventId');
       const user = requireUser(req);
 
-      // rating/content sai định dạng -> ZodError -> 400 VALIDATION_ERROR (RATING_REQUIRED
-      // và CONTENT_TOO_LONG theo API.md đều là 400, khác các lỗi nghiệp vụ 422 bên dưới)
-      const input = createFeedbackSchema.parse(req.body);
+      // RATING_REQUIRED / CONTENT_TOO_LONG là hai mã RIÊNG ở 400 (API.md mục 6), khác các
+      // lỗi nghiệp vụ 422 mà service ném ra bên dưới.
+      const input = parseCreateFeedback(req.body);
       const feedback = await FeedbackService.createFeedback(
         eventId,
         user.id,
@@ -82,13 +82,16 @@ export class FeedbackController {
     try {
       const eventId = getParam(req, 'eventId');
 
-      const jobId = await FeedbackService.requestAnalysis(eventId);
+      // Chưa cấu hình GEMINI_API_KEY -> ném 503 SENTIMENT_UNAVAILABLE ngay tại đây,
+      // KHÔNG nhận job (API.md mục 6).
+      await FeedbackService.requestAnalysis(eventId);
 
       // 202: worker gọi LLM ở tiến trình nền, API không đợi.
-      // FE theo dõi tiến độ bằng cách gọi lại GET /feedbacks/summary.
+      // KHÔNG trả job_id: không có endpoint nào tra cứu được id đó, để lại chỉ là field
+      // vô dụng trong contract. FE theo dõi tiến độ bằng cách gọi lại GET /feedbacks/summary.
       res.status(202).json({
         success: true,
-        data: { job_id: jobId },
+        data: {},
       });
     } catch (error) {
       next(error);

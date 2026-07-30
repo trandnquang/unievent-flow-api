@@ -1,5 +1,6 @@
 import { z } from 'zod';
 import { paginationSchema } from './common.schema';
+import { AppError } from '../utils/errors';
 
 // Schema phân trang danh sách phản hồi đã gửi của chính người dùng (FR-42, BR-122)
 export const queryMyFeedbacksSchema = paginationSchema;
@@ -17,6 +18,54 @@ export const createFeedbackSchema = z.object({
     .max(5, 'Số sao phải từ 1 đến 5'),
   content: z.string().trim().max(500, 'Nhận xét tối đa 500 ký tự').optional(),
 });
+
+// API.md mục 6 đòi hai mã lỗi RIÊNG ở HTTP 400 cho luồng gửi phản hồi, thay vì gộp chung vào
+// VALIDATION_ERROR — frontend rẽ nhánh theo `code` (mục 1.2) nên cần phân biệt được "chưa
+// chấm sao" với "nhận xét quá dài" để hiện đúng thông báo dưới đúng ô nhập.
+//   - rating thiếu/sai  -> RATING_REQUIRED   (BR-68)
+//   - content quá 500   -> CONTENT_TOO_LONG  (MSG-53)
+// Các lỗi còn lại giữ nguyên VALIDATION_ERROR mặc định.
+export const parseCreateFeedback = (data: unknown): CreateFeedbackInput => {
+  const result = createFeedbackSchema.safeParse(data);
+  if (result.success) return result.data;
+
+  const details = result.error.issues.map((issue) => ({
+    path: issue.path.join('.'),
+    message: issue.message,
+  }));
+
+  const issues = result.error.issues;
+  const hasRatingIssue = issues.some((issue) => issue.path[0] === 'rating');
+  // Chỉ nhận đúng ca "vượt độ dài"; content sai KIỂU là lỗi cú pháp thường, không phải MSG-53
+  const hasContentTooLong = issues.some(
+    (issue) => issue.path[0] === 'content' && issue.code === 'too_big'
+  );
+
+  if (hasRatingIssue) {
+    throw new AppError(
+      400,
+      'RATING_REQUIRED',
+      'Vui lòng chọn số sao đánh giá (1–5).',
+      details
+    );
+  }
+
+  if (hasContentTooLong) {
+    throw new AppError(
+      400,
+      'CONTENT_TOO_LONG',
+      'Nhận xét tối đa 500 ký tự.',
+      details
+    );
+  }
+
+  throw new AppError(
+    400,
+    'VALIDATION_ERROR',
+    'Dữ liệu đầu vào không hợp lệ',
+    details
+  );
+};
 
 // BR-71: danh sách phản hồi của sự kiện, lọc theo nhãn cảm xúc + phân trang
 export const queryEventFeedbacksSchema = paginationSchema.extend({

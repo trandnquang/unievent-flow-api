@@ -65,6 +65,19 @@ const getClient = (): GoogleGenAI => {
   return client;
 };
 
+// Các HTTP status mà mọi lô tiếp theo chắc chắn cũng hỏng y hệt: sai/thiếu quyền khoá (401,
+// 403), tên model không tồn tại hoặc đã bị khai tử (404), hết quota (429), request sai cấu
+// trúc (400). Nuốt các lỗi này rồi chạy tiếp chỉ tốn thêm lượt gọi và giấu mất nguyên nhân.
+const FATAL_HTTP_STATUSES = new Set([400, 401, 403, 404, 429]);
+
+const isFatalProviderError = (error: unknown): boolean => {
+  // Lỗi cấu hình của chính mình (thiếu khoá) luôn là fatal
+  if (error instanceof AppError) return true;
+
+  const status = (error as { status?: unknown })?.status;
+  return typeof status === 'number' && FATAL_HTTP_STATUSES.has(status);
+};
+
 const analyzeBatch = async (
   items: SentimentInput[]
 ): Promise<SentimentOutput[]> => {
@@ -104,24 +117,49 @@ const analyzeBatch = async (
 };
 
 export class SentimentService {
-  // Phân tích cả danh sách, tự chia lô. Lô nào lỗi thì bỏ qua lô đó và tiếp tục — một lô
-  // hỏng không được kéo đổ toàn bộ batch, vì các phản hồi chưa phân tích vẫn còn
-  // analyzed_at IS NULL nên lần chạy sau sẽ tự lấy lại (partial index idx_feedbacks_unanalyzed).
+  // Kiểm cấu hình mà KHÔNG gọi mạng — dùng ở tầng endpoint để từ chối ngay bằng 503 thay vì
+  // nhận job rồi thất bại lặng lẽ ở worker (xem FeedbackService.requestAnalysis).
+  public static assertConfigured(): void {
+    getClient();
+  }
+
+  // Phân tích cả danh sách, tự chia lô.
+  //
+  // Hai loại lỗi được đối xử KHÁC nhau — đây là điểm mấu chốt:
+  //   - Lỗi cục bộ của một lô (5xx tạm thời, đứt mạng, JSON hỏng): bỏ qua lô đó và đi tiếp.
+  //     Các phản hồi trong lô vẫn còn analyzed_at IS NULL nên lần chạy sau tự lấy lại
+  //     (partial index idx_feedbacks_unanalyzed) — một lô hỏng không kéo đổ cả batch.
+  //   - Lỗi dịch vụ/cấu hình (sai khoá, sai tên model, hết quota): NÉM RA để job BullMQ
+  //     failed. Nuốt nhóm này chính là lỗi đã khiến FR-25/26 hỏng im lặng — worker in
+  //     "đã phân tích 0/N" và báo thành công, không ai biết model đã bị khai tử.
   public static async analyze(
     items: SentimentInput[]
   ): Promise<SentimentOutput[]> {
     const results: SentimentOutput[] = [];
+    let failedBatches = 0;
+    const totalBatches = Math.ceil(items.length / BATCH_SIZE);
 
     for (let start = 0; start < items.length; start += BATCH_SIZE) {
       const batch = items.slice(start, start + BATCH_SIZE);
       try {
         results.push(...(await analyzeBatch(batch)));
       } catch (error) {
+        if (isFatalProviderError(error)) throw error;
+
+        failedBatches += 1;
         console.error(
           `❌ [ERROR] Phân tích cảm xúc thất bại cho lô ${start / BATCH_SIZE + 1} (${batch.length} phản hồi):`,
           error instanceof Error ? error.message : error
         );
       }
+    }
+
+    // Lưới chắn cuối: mọi lô đều hỏng thì đây không còn là sự cố cục bộ nữa, dù từng lô
+    // báo lỗi "tạm thời". Ném ra để job failed và hiện lên log giám sát.
+    if (totalBatches > 0 && failedBatches === totalBatches) {
+      throw new Error(
+        `Phân tích cảm xúc thất bại toàn bộ ${totalBatches} lô — xem log lỗi từng lô ở trên`
+      );
     }
 
     return results;

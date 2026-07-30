@@ -48,7 +48,10 @@ const envSchema = z.object({
   // Để optional ở tầng env vì chỉ 1/50 endpoint cần — thiếu khoá thì API vẫn khởi động
   // bình thường, chỉ riêng luồng phân tích báo lỗi rõ ràng (xem sentiment.service.ts).
   GEMINI_API_KEY: z.string().optional(),
-  GEMINI_MODEL: z.string().default('gemini-2.5-flash'),
+  // Mặc định KHÔNG dùng bí danh trôi kiểu `gemini-flash-latest`: bí danh đó đổi model phía
+  // Google mà không có commit nào bên mình, làm kết quả phân tích tự đổi sau lưng.
+  // `gemini-2.5-flash` (mặc định cũ) đã bị Google khoá với tài khoản mới — gọi ra 404.
+  GEMINI_MODEL: z.string().default('gemini-3.5-flash-lite'),
   // FR-40 (BR-111): lưu trữ ảnh trên Cloudinary. Cùng lý do optional như Gemini.
   CLOUDINARY_CLOUD_NAME: z.string().optional(),
   CLOUDINARY_API_KEY: z.string().optional(),

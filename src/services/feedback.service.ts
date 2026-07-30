@@ -160,14 +160,18 @@ export class FeedbackService {
   // ---------------------------------------------------------------- FR-25/26
 
   // Kích hoạt phân tích cảm xúc (BR-73: chỉ thủ công, không có cron định kỳ).
-  // Trả job_id ngay, việc gọi LLM nằm ở worker (SRS mục 5.6).
-  public static async requestAnalysis(eventId: string): Promise<string> {
-    const job = await feedbackQueue.add('analyze', {
+  // Việc gọi LLM nằm ở worker (SRS mục 5.6) nên endpoint trả 202 ngay.
+  public static async requestAnalysis(eventId: string): Promise<void> {
+    // Chặn NGAY tại endpoint khi chưa cấu hình khoá (API.md mục 6, MSG SENTIMENT_UNAVAILABLE).
+    // Kiểm ở đây chứ không chỉ trong worker: worker chạy ở tiến trình khác nên lỗi của nó
+    // không bao giờ tới được người gọi — đẩy job rồi trả 202 sẽ thành "im lặng thất bại",
+    // người dùng đợi mãi một kết quả không bao giờ có.
+    SentimentService.assertConfigured();
+
+    await feedbackQueue.add('analyze', {
       type: 'analyze',
       event_id: eventId,
     });
-
-    return String(job.id);
   }
 
   // Lấy các phản hồi cần phân tích của một sự kiện (BR-72).

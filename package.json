@@ -9,7 +9,8 @@
     "worker": "tsx watch src/workers/index.ts",
     "build": "tsc",
     "start": "node dist/server.js",
-    "seed:admin": "tsx scripts/seedAdmin.ts"
+    "seed:admin": "tsx scripts/seedAdmin.ts",
+    "check:connections": "tsx scripts/check-connections.ts"
   },
   "repository": {
     "type": "git",

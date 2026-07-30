@@ -42,8 +42,11 @@ export class TicketService {
     ]);
 
     return {
-      // Làm phẳng quan hệ: FE cần vé kèm thông tin sự kiện, không cần lớp registration lồng
-      tickets: tickets.map(({ registrations, ...ticket }) => ({
+      // Làm phẳng quan hệ: FE cần vé kèm thông tin sự kiện, không cần lớp registration lồng.
+      // jwt_code bị loại bỏ: đó là chuỗi JWT thô của vé, chỉ được phép sống trong ảnh QR
+      // (qr_code_data_url của FR-18). Trả kèm bản text ở danh sách vé làm token dễ bị copy
+      // và chia sẻ hơn hẳn, trong khi API.md mục 4 không hề liệt kê field này.
+      tickets: tickets.map(({ registrations, jwt_code: _jwtCode, ...ticket }) => ({
         ...ticket,
         registration_id: registrations.id,
         registration_status: registrations.status,
@@ -85,10 +88,12 @@ export class TicketService {
       throw new AppError(404, 'TICKET_NOT_FOUND', 'Không tìm thấy vé này');
     }
 
-    const { registrations, ...rest } = ticket;
+    // jwt_code tách riêng khỏi phần trả về: nó chỉ dùng để dựng ảnh QR ngay bên dưới,
+    // KHÔNG được lộ thành field JSON (xem chú thích ở listMyTickets).
+    const { registrations, jwt_code: jwtCode, ...rest } = ticket;
 
     // Nội dung QR chính là jwt_code — máy quét ở cổng chỉ cần xác thực chữ ký (BR-109)
-    const qrCodeDataUrl = await generateQrDataUrl(ticket.jwt_code);
+    const qrCodeDataUrl = await generateQrDataUrl(jwtCode);
 
     return {
       ticket: {
