@@ -1,6 +1,21 @@
 # UniEvent Flow — Entity Relationship Diagram
 
-_Phiên bản: **v0.4.1** — đồng bộ theo SRS v0.6.6 (mục 2.1), khớp SCHEMA.sql v0.4.1 và API v0.4.4._
+_Phiên bản: **v1.0.0** — đồng bộ theo SRS v1.0.0 (mục 2.1), khớp SCHEMA.sql v1.0.0 và API v1.0.0._
+
+> ## 🏁 v1.0.0 — BẢN CHỐT (30/07/2026)
+>
+> **KHÔNG có thay đổi cấu trúc dữ liệu.** Mô hình **9 bảng** giữ nguyên y hệt v0.4.1: không thêm/bớt bảng, cột, enum hay quan hệ. Mốc này chỉ đồng bộ số hiệu với 3 tài liệu còn lại và ghi nhận kết quả xác minh runtime.
+>
+> **Bốn điểm bám sát khi hiện thực (nêu ở v0.4.1) nay đã được xác minh bằng chạy thật:**
+>
+> 1. **View `v_event_registration_stats` đếm đúng** `status IN ('confirmed','pending')` — đã truy vấn trực tiếp trên CSDL đang chạy, trả đủ 9 cột. ⚠️ View này **không** có trong `schema.prisma` (thiếu `previewFeatures = ["views"]`), nên mọi truy vấn tới nó **phải** dùng `$queryRaw`; đã kiểm toàn bộ mã nguồn, cả hai nơi dùng đều tuân thủ.
+> 2. **Unique index một phần `uq_registration_active_per_user_event`** hoạt động đúng: dữ liệu thử nghiệm chứa hai cặp "đăng ký lại" (một `cancelled` + một `confirmed`, và một `failed` + một `pending`) cùng `event_id`+`user_id` — cả hai cặp tồn tại song song đúng như BR-49 yêu cầu, mỗi cặp chỉ có 1 bản ghi nằm trong phạm vi index.
+> 3. **`UNIQUE` trên `checkin_logs.ticket_id`** giữ vai trò lớp phòng vệ cuối. Hai lớp trước nó cũng đã xác minh: khoá Redis `checkin:{ticketId}` (BR-91) và kiểm `ticket.status` (BR-61) — quét cùng một vé hai lần cho `valid` rồi `already_checked_in`.
+> 4. **`pg_trgm` + chỉ mục GIN** vẫn tách thành câu lệnh riêng bật/tắt được để phục vụ phép đo NFR-44.
+>
+> **Hai ràng buộc `CHECK` chỉ tồn tại ở `schema.sql`** (`chk_checkin_method_organizer` và `feedbacks.rating BETWEEN 1 AND 5`) **nay đã được chặn ở tầng ứng dụng** — Prisma introspect không biểu diễn được `CHECK`, nên nếu tầng Zod/service không tự chặn thì lỗi CSDL thô sẽ thành HTTP 500 thay vì lỗi nghiệp vụ rõ ràng.
+>
+> **Dữ liệu thử nghiệm:** `docs/seed.sql` (idempotent, dọn theo đúng thứ tự khoá ngoại) dựng dữ liệu phủ toàn bộ 9 bảng, kèm `scripts/gen-seed.ts` lo phần cần runtime (băm bcrypt, ký `jwt_code` theo `end_time` thật, dựng lại khoá Redis).
 
 > **v0.4.1 (Giai đoạn 1 — rà soát đồng bộ):** chỉ cập nhật tham chiếu phiên bản (SRS v0.6.1 → v0.6.6). **Không phát sinh thay đổi cấu trúc dữ liệu** — mô hình 9 bảng giữ nguyên như v0.4.0. Các FR thêm ở SRS v0.6.2→v0.6.6 (FR-39/40/41/42) đều là endpoint đọc/nghiệp vụ trên schema sẵn có, không thêm bảng/cột/enum.
 

@@ -4,22 +4,32 @@
 
 Không tự suy đoán, không tự thêm field / endpoint / bảng / cột / enum ngoài 4 tài liệu:
 
-- `docs/srs.md` — SRS **v0.7.2** (FR-01 → FR-42: 42 FR, 42 UC, 127 BR) — thẩm quyền nghiệp vụ cao nhất
-- `docs/api_spec.md` — API **v0.5.2** (50 endpoint; contract giữa Backend ↔ Frontend)
-- `docs/erd.md` — ERD **v0.4.1** (9 bảng)
-- `docs/schema.sql` — SCHEMA **v0.4.1** (nguồn sự thật CSDL; `prisma/schema.prisma` chỉ là bản introspect)
+- `docs/srs.md` — SRS **v1.0.0** (FR-01 → FR-42: 42 FR, 42 UC, 127 BR) — thẩm quyền nghiệp vụ cao nhất
+- `docs/api_spec.md` — API **v1.0.0** (50 endpoint; contract giữa Backend ↔ Frontend)
+- `docs/erd.md` — ERD **v1.0.0** (9 bảng)
+- `docs/schema.sql` — SCHEMA **v1.0.0** (nguồn sự thật CSDL; `prisma/schema.prisma` chỉ là bản introspect)
+- `docs/seed.sql` — dữ liệu thử nghiệm (idempotent), chạy bằng `npm run seed`
 
 Khi mâu thuẫn: về **nghiệp vụ** SRS > API > ERD; về **cấu trúc CSDL** thì `schema.sql` là chuẩn
 (Prisma chỉ `db pull`, không tự định nghĩa lược đồ).
 
-## Trạng thái hiện tại — đang HARDENING tiến tới doc v1.0.0
+## Trạng thái hiện tại — doc **v1.0.0**, backend **đã verify runtime**
 
-- Backend đã hiện thực **đủ 50/50 endpoint**; 4 tài liệu đã đồng bộ ngược để khớp mã nguồn
-  (từ SRS v0.7.0 / API v0.5.0 trở đi).
-- Đợt hiện tại **KHÔNG audit lại từ đầu, KHÔNG redesign** — chỉ **VERIFY** (doc ↔ code khớp thật chưa)
-  và **FIX** lỗi tồn đọng theo tài liệu, rồi mới đóng mốc v1.0.0.
-- Trình tự: verify doc↔code → nối & kiểm tra Gemini + Cloudinary → sửa must-fix → seed dữ liệu test
-  → chạy thử toàn bộ endpoint → viết lại README → bump 4 tài liệu lên v1.0.0.
+Đợt hardening đã đóng. Backend không còn ở mức "đã có mã nguồn" mà **đã được gọi thật và xác minh**:
+
+- **50/50 endpoint verify runtime** — `npm run smoke` gọi lần lượt toàn bộ endpoint trên CSDL
+  đã seed, đạt **95/95 phép kiểm PASS**. Mỗi lời gọi kiểm 3 lớp: HTTP status · envelope §1.2 ·
+  quét đệ quy mọi khoá trong body bắt camelCase. Phủ 8 ca lỗi nghiệp vụ tiêu biểu và 2 luồng
+  bất đồng bộ (đăng ký → vé phát ra; phân tích cảm xúc → summary đổi số).
+- **Gemini + Cloudinary đã kết nối thật** bằng khoá thật, không mock (`npm run check:connections`
+  → 6/6 PASS).
+- **CORS đã mount**; **hai `CHECK` chỉ-có-ở-SQL đã chặn ở tầng Zod/service**.
+- **4 tài liệu đã bump lên v1.0.0**, kèm `docs/seed.sql`.
+- README.md đã viết lại phản ánh trạng thái thật.
+
+Từ đây trở đi: **thay đổi nào cũng phải kèm cập nhật tài liệu tương ứng** — 4 tài liệu nay là
+bản chốt v1.0.0, không còn ở trạng thái "đang đồng bộ ngược". Chạy lại `npm run smoke` sau mỗi
+thay đổi cross-cutting.
 
 ## Ràng buộc kỹ thuật cố định
 
@@ -36,20 +46,36 @@ Khi mâu thuẫn: về **nghiệp vụ** SRS > API > ERD; về **cấu trúc CSD
 - Response envelope / mã lỗi theo `api_spec.md` §1.2–1.4; cấu trúc thư mục theo §11.
 - Comment nghiệp vụ **tiếng Việt** kèm mã BR/MSG; tên biến/hàm **tiếng Anh**.
 
-## Bẫy đã biết — PHẢI kiểm khi hardening (đừng bỏ sót)
+## Bất biến PHẢI giữ — đừng phá khi sửa về sau
 
-1. **CORS đã có trong `package.json` nhưng CHƯA từng được mount** (API §1.6b) → FE không gọi
-   được endpoint nào từ trình duyệt. Cấu hình qua `CORS_ORIGIN`. → must-fix.
-2. **Hai ràng buộc `CHECK` chỉ tồn tại ở SQL, Prisma KHÔNG introspect được** → tầng Zod/service
+Đây là các ràng buộc đã trả giá để tìm ra. Sửa mã mà phá một trong số này thì `npm run smoke`
+sẽ đỏ, nhưng lý do hỏng không hiển nhiên — nên đọc trước khi đụng vào vùng liên quan.
+
+1. **Hai ràng buộc `CHECK` chỉ tồn tại ở SQL, Prisma KHÔNG introspect được** → tầng Zod/service
    PHẢI tự chặn, nếu không lỗi CSDL thô thành **HTTP 500** thay vì lỗi nghiệp vụ rõ ràng:
    - `chk_checkin_method_organizer`: `self` ⇒ `organizer_id` NULL; `qr_scan` ⇒ NOT NULL (BR-66).
+     Toàn repo chỉ có **đúng 2 nơi** ghi `checkin_logs` — thêm nơi thứ 3 thì phải tự chặn lại.
    - `feedbacks.rating BETWEEN 1 AND 5`.
-3. **VIEW `v_event_registration_stats` KHÔNG có trong `schema.prisma`** → mọi truy vấn tới view
+2. **VIEW `v_event_registration_stats` KHÔNG có trong `schema.prisma`** → mọi truy vấn tới view
    này phải dùng `$queryRaw`, không được coi là model Prisma.
-4. **Suy giảm mềm khi thiếu key ngoài**: chưa cấu hình `GEMINI_API_KEY` → luồng phân tích trả
-   `503 SENTIMENT_UNAVAILABLE` (API vẫn khởi động); Cloudinary lỗi → `502 UPLOAD_FAILED` (MSG-48).
-5. **`job_id` của `POST /events/:eventId/feedbacks/analyze` hiện KHÔNG poll được** (chưa có endpoint)
-   — điểm còn treo, cần chốt trước v1.0.0 (bỏ `job_id`, hay thêm endpoint tra cứu).
+3. **Trạng thái sống trên Redis KHÔNG có cột PostgreSQL tương ứng** (thiết kế hai pha, SRS §2.2.3).
+   Reset CSDL mà không dọn Redis sẽ để lại trạng thái mồ côi rất khó truy — ca đã gặp thật: khoá
+   `checkin:{ticketId}` TTL 24h sống sót qua lần seed sau, khiến vé vừa đưa về `valid` vẫn trả
+   `already_checked_in`. Năm nhóm khoá phải dọn cùng lúc với CSDL:
+   `event:{eventId}:tickets` · `checkin:{ticketId}` · `hold:{registrationId}` ·
+   `idem:{userId}:{key}` · `active:{userId}`. (`npm run seed` đã lo việc này.)
+4. **Suy giảm mềm khi thiếu key ngoài — phải nổi lên tới NGƯỜI GỌI, không chỉ tồn tại trong worker.**
+   Thiếu `GEMINI_API_KEY` → `POST /events/:id/feedbacks/analyze` trả `503 SENTIMENT_UNAVAILABLE`
+   **ngay tại endpoint**, không nhận job rồi thất bại lặng lẽ. Cloudinary lỗi → `502 UPLOAD_FAILED`
+   (MSG-48). API vẫn khởi động bình thường trong cả hai trường hợp.
+5. **Lỗi dịch vụ LLM ≠ lỗi một lô.** Sai khoá (401/403), sai model (404), hết quota (429) phải làm
+   job **thất bại**; chỉ lỗi tạm thời của từng lô mới được nuốt. Nuốt cả hai như nhau khiến job báo
+   thành công với 0 kết quả — đúng cách mà mô hình `gemini-2.5-flash` bị Google khai tử đã trốn
+   thoát khỏi mọi log suốt một thời gian.
+6. **`GEMINI_MODEL` không được dùng bí danh trôi** (`gemini-flash-latest`): mô hình phía sau đổi thì
+   kết quả phân tích tự đổi mà không có commit nào. Mặc định hiện tại `gemini-3.5-flash-lite`.
+7. **`tickets.jwt_code` KHÔNG được trả ra JSON** — nó chỉ sống trong ảnh QR (`qr_code_data_url`).
+   Cẩn thận khi `spread` bản ghi Prisma của bảng `tickets` vào response.
 
 ## Quy ước casing (wire format — KHÔNG hỏi lại)
 

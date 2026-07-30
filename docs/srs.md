@@ -2,7 +2,25 @@
 
 _Tài liệu chuẩn (single source of truth) của hệ thống UniEvent Flow, dùng làm ngữ cảnh cho Claude / Claude Code / Claude Design. Cấu trúc theo SRS v0.6.1; mọi sơ đồ được biểu diễn bằng mã Mermaid._
 
-_**Phiên bản: v0.7.2** — FR-01 → FR-42 (42 FR), 42 UC, 127 BR. Đồng bộ với API v0.5.2, ERD v0.4.1, SCHEMA v0.4.1._
+_**Phiên bản: v1.0.0** — FR-01 → FR-42 (42 FR), 42 UC, 127 BR. Đồng bộ với API v1.0.0, ERD v1.0.0, SCHEMA v1.0.0._
+
+> ## 🏁 v1.0.0 — BẢN CHỐT (30/07/2026)
+>
+> **Không đổi nghiệp vụ: số lượng FR/UC/BR giữ nguyên (42/42/127), không thêm/bớt FR, không đổi CSDL.** Mốc này ghi nhận việc chuyển từ *"đã có mã nguồn"* sang *"đã xác minh chạy thật"*, cộng với việc chốt điểm cuối cùng còn để ngỏ.
+>
+> **Xác minh runtime — đây là điểm khác biệt so với v0.7.x:**
+>
+> 1. **50/50 endpoint đã được gọi thật** trên máy chủ đang chạy với CSDL đã seed. Bộ kiểm thử đầu-cuối đạt **95/95 phép kiểm PASS**, phủ cả 8 ca lỗi nghiệp vụ tiêu biểu và 2 luồng bất đồng bộ: FR-14/16 (đăng ký → worker sinh vé, poll `GET /registrations/:id` thấy `confirmed`) và FR-25/26 (kích hoạt phân tích → `GET /feedbacks/summary` đổi số).
+> 2. **BR-72 — Gemini đã kết nối thật** bằng khoá thật, trả JSON đúng schema đã ép. ⚠️ **Mô hình mặc định đổi `gemini-2.5-flash` → `gemini-3.5-flash-lite`**: Google đã khoá cả họ `gemini-2.5-*` với tài khoản mới (trả **404 NOT_FOUND**), khiến FR-25/26 hỏng hoàn toàn mà không có dấu hiệu nào. Nguyên tắc bổ sung: **không dùng bí danh trôi** kiểu `gemini-flash-latest` — mô hình phía sau đổi thì kết quả phân tích tự đổi mà không có thay đổi nào trong mã nguồn, phá vỡ khả năng tái lập của FR-26.
+> 3. **BR-111 — Cloudinary đã kết nối thật**: ping + tải lên/xoá ảnh thành công, FR-40 trả URL thật.
+> 4. **Hai `CHECK` chỉ tồn tại ở `schema.sql` nay đã được chặn ở tầng ứng dụng** (xem mục 2.6.1 ghi chú 4): `feedbacks.rating BETWEEN 1 AND 5` chặn ở Zod; `chk_checkin_method_organizer` chặn ở cả hai nhánh ghi `checkin_logs` — BR-66 `self` ⇒ `organizer_id` NULL, `qr_scan` ⇒ NOT NULL. Không còn đường nào để lỗi CSDL thô nổi lên thành HTTP 500.
+> 5. **CORS đã mount** với `CORS_ORIGIN` — trước đây thư viện có trong dự án nhưng chưa bao giờ được gắn, khiến frontend không gọi được endpoint nào từ trình duyệt.
+> 6. **Kèm dữ liệu thử nghiệm** — `docs/seed.sql` (idempotent) + `scripts/gen-seed.ts`. Phủ đủ 9 danh mục sự kiện, 4 trạng thái đăng ký, 3 trạng thái vé, 3 trạng thái Co-host, 5 loại phản hồi (chỉ-rating / 3 nhãn đã phân tích / chưa phân tích), cả hai `checkin_method`, và các ca biên: tài khoản bị vô hiệu hoá, `reset_token` còn hạn và hết hạn, sự kiện hết vé, sự kiện huỷ bởi chủ và bởi Quản trị viên.
+>
+> **Chốt điểm treo cuối cùng:**
+>
+> 7. **UC-30 (FR-25) — bỏ `jobId` khỏi Post-condition.** `POST /events/:eventId/feedbacks/analyze` nay trả **202 rỗng**; frontend theo dõi tiến độ bằng `GET /events/:eventId/feedbacks/summary`. Lý do: `jobId` chưa từng tra cứu được ở bất kỳ đâu — không có endpoint poll nào nhận nó — nên để lại chỉ là một field vô dụng trong contract v1.0.0. Phương án thay thế (thêm endpoint tra cứu job) bị loại vì nâng tổng số endpoint lên 51 và buộc sửa ma trận truy vết của cả 4 tài liệu, trong khi `summary` vốn đã đủ để biết tiến độ.
+> 8. **Suy giảm mềm của FR-25 được siết lại:** thiếu `GEMINI_API_KEY` thì endpoint từ chối **ngay tại tầng API** bằng 503 `SENTIMENT_UNAVAILABLE`. Trước đây mã lỗi này chỉ tồn tại bên trong worker nên không bao giờ tới được người gọi — API vẫn nhận job, trả 202, rồi thất bại lặng lẽ và người dùng chờ mãi một kết quả không bao giờ có.
 
 > **Thay đổi v0.7.2 (chốt luồng tự check-in online — quyết định sản phẩm D1; không đổi số lượng FR/UC/BR, không đổi endpoint, không đổi mã lỗi, không đổi CSDL):** bỏ mô hình hai nút (“Mở phòng họp” + “Xác nhận tham dự”) của luồng FR-36. Nay chỉ còn **một hành động duy nhất “Vào phòng họp”**: bấm là vừa mở `join_url` vừa được ghi nhận tham dự.
 >
@@ -2678,7 +2696,7 @@ flowchart TB
 | **Actor:**          | Ban tổ chức (kích hoạt thủ công) hoặc Hệ thống (cron tự động).                                                   |
 | **Trigger:**        | Ban tổ chức nhấn nút “Phân tích ngay”, hoặc job cron chạy theo lịch định kỳ.                                     |
 | **Pre-condition:**  | Tồn tại ít nhất một feedback có content khác rỗng và analyzed_at IS NULL.                                        |
-| **Post-condition:** | Job phân tích được đẩy vào hàng đợi, trả jobId để theo dõi tiến trình.                                           |
+| **Post-condition:** | Job phân tích được đẩy vào hàng đợi; API trả 202 rỗng. ⭐ **v1.0.0 — bỏ `jobId`**: không có endpoint nào tra cứu được id đó, nên Ban tổ chức theo dõi tiến độ bằng cách xem lại màn tổng hợp phản hồi (`GET /events/:eventId/feedbacks/summary`) cho tới khi số liệu đổi. |
 
 **Activities Flow**
 
@@ -2690,7 +2708,7 @@ flowchart TB
         N1["(1) Ban tổ chức nhấn nút 'Phân tích ngay', hoặc job cron chạy th…"]
         N2["(2) Batch Rule"]
         N3["(3) Trigger Rule"]
-        N4["(4) Kết thúc: Job phân tích được đẩy vào hàng đợi, trả jobId để th"]
+        N4["(4) Kết thúc: Job phân tích được đẩy vào hàng đợi, API trả 202 rỗng"]
     end
     N1 --> N2
     N2 --> N3
@@ -2702,7 +2720,7 @@ flowchart TB
 
 | **Step** | **BR Code** | **Description**                                                                                                                                                                             |
 | -------- | ----------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| (2)      | **BR-72**   | Batch Rule ⭐ **chốt nhà cung cấp v0.7.0**: Gộp các feedback có content khác rỗng và chưa phân tích (analyzed_at IS NULL) thành 1 batch, gọi LLM API. Feedback chỉ có rating, không có content **bị loại khỏi batch hoàn toàn** — không tốn token cho thứ không có gì để đọc. Nhà cung cấp đã chốt là **Google Gemini** (biến môi trường `GEMINI_API_KEY`, model cấu hình qua `GEMINI_MODEL`, mặc định `gemini-2.5-flash`); request ép định dạng trả về bằng JSON schema để không phải phân tích văn bản tự do. Batch lớn được **chia lô** (50 phản hồi/lần gọi) để không vượt giới hạn token; một lô lỗi chỉ bỏ qua lô đó, các phản hồi trong lô vẫn giữ `analyzed_at IS NULL` nên lần chạy sau tự lấy lại. |
+| (2)      | **BR-72**   | Batch Rule ⭐ **chốt nhà cung cấp v0.7.0**: Gộp các feedback có content khác rỗng và chưa phân tích (analyzed_at IS NULL) thành 1 batch, gọi LLM API. Feedback chỉ có rating, không có content **bị loại khỏi batch hoàn toàn** — không tốn token cho thứ không có gì để đọc. Nhà cung cấp đã chốt là **Google Gemini** (biến môi trường `GEMINI_API_KEY`, model cấu hình qua `GEMINI_MODEL`, mặc định **`gemini-3.5-flash-lite`** — ⭐ **sửa v1.0.0**, bản trước ghi `gemini-2.5-flash` nhưng Google đã khoá cả họ `gemini-2.5-*` với tài khoản mới và trả 404, làm hỏng toàn bộ FR-25/26; **cấm dùng bí danh trôi** như `gemini-flash-latest` vì mô hình phía sau đổi thì kết quả phân tích tự đổi mà không có thay đổi nào trong mã nguồn); request ép định dạng trả về bằng JSON schema để không phải phân tích văn bản tự do. Batch lớn được **chia lô** (50 phản hồi/lần gọi) để không vượt giới hạn token; một lô lỗi chỉ bỏ qua lô đó, các phản hồi trong lô vẫn giữ `analyzed_at IS NULL` nên lần chạy sau tự lấy lại. ⭐ **v1.0.0 — phân biệt hai loại lỗi**: quy tắc "bỏ qua lô lỗi" chỉ áp dụng cho lỗi **cục bộ, tạm thời** (5xx thoáng qua, đứt mạng, JSON hỏng). Lỗi **dịch vụ/cấu hình** — sai khoá (401/403), sai tên model (404), hết quota (429) — phải làm job **thất bại** để nổi lên log giám sát, vì mọi lô sau chắc chắn hỏng y hệt. Thêm lưới chắn: nếu **toàn bộ** các lô đều lỗi thì đây không còn là sự cố cục bộ, job cũng phải thất bại. Vấn đề được xử lý: nuốt cả hai loại như nhau khiến job báo thành công với 0 kết quả, `analyzed_at` giữ NULL vĩnh viễn, và không ai biết mô hình đã bị nhà cung cấp khai tử. |
 | (3)      | **BR-73**   | Trigger Rule ⭐ **thu hẹp v0.7.0**: Kích hoạt **thủ công** qua nút “Phân tích ngay” trên dashboard (`POST /events/:eventId/feedbacks/analyze` → 202). Phương án chạy tự động theo lịch (cron mỗi N giờ) **nằm ngoài phạm vi 7 tuần** — bản trước dùng chữ “hoặc” nên một nhánh là đủ, và việc tự gọi dịch vụ trả phí khi không có người trông là rủi ro chi phí không cần thiết cho đồ án.                                                                      |
 
 ### 3.5.4 UC-33: Lưu nhãn cảm xúc & từ khoá (FR-26)

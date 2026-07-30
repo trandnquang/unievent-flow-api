@@ -10,6 +10,8 @@
     "build": "tsc",
     "start": "node dist/server.js",
     "seed:admin": "tsx scripts/seedAdmin.ts",
+    "seed": "tsx scripts/gen-seed.ts",
+    "smoke": "npm run seed && tsx scripts/smoke.ts",
     "check:connections": "tsx scripts/check-connections.ts"
   },
   "repository": {

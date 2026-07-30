@@ -1,8 +1,47 @@
 -- ============================================================================
 -- UniEvent Flow — Database Schema (PostgreSQL)
--- Nguồn: ERD.md v0.4.1 + SRS v0.7.2 (42 FR, 42 UC, 127 BR) + API.md v0.5.2
--- Phiên bản schema: v0.4.1
+-- Nguồn: ERD.md v1.0.0 + SRS v1.0.0 (42 FR, 42 UC, 127 BR) + API.md v1.0.0
+-- Phiên bản schema: v1.0.0
 -- Ngày cập nhật: 30/07/2026
+--
+-- ============================================================================
+-- CHANGELOG v1.0.0 (30/07/2026) — BẢN CHỐT
+--
+--   KHÔNG có thay đổi DDL nào. Lược đồ 9 bảng, 9 enum, 1 view giữ nguyên y hệt v0.4.1:
+--   không thêm/bớt bảng, cột, kiểu enum, index hay ràng buộc. Mốc này chỉ đồng bộ số hiệu
+--   với 3 tài liệu còn lại và ghi nhận kết quả xác minh chạy thật.
+--
+--   ✅ ĐÃ XÁC MINH RUNTIME (không còn là "đã có mã nguồn"):
+--     - 50/50 endpoint đã được gọi thật trên CSDL đã seed: 95/95 phép kiểm PASS.
+--     - Hai CHECK chỉ-có-ở-file-này NAY ĐÃ ĐƯỢC CHẶN Ở TẦNG ỨNG DỤNG (xem cảnh báo dưới):
+--         · feedbacks.rating BETWEEN 1 AND 5   -> chặn ở Zod schema.
+--         · chk_checkin_method_organizer       -> chặn ở CẢ HAI nhánh ghi checkin_logs:
+--             'self'    => organizer_id = NULL     (luồng tự check-in online, FR-36)
+--             'qr_scan' => organizer_id NOT NULL   (worker ghi log sau khi quét, BR-62)
+--           Toàn repo chỉ có đúng 2 nơi ghi checkin_logs, cả hai đều tuân thủ.
+--       => Không còn đường nào để lỗi CSDL thô nổi lên thành HTTP 500.
+--     - View v_event_registration_stats: đã truy vấn trực tiếp, trả đủ 9 cột. Toàn bộ mã
+--       nguồn truy vấn view này bằng $queryRaw, không nơi nào coi nó là model Prisma.
+--     - Unique index một phần uq_registration_active_per_user_event: xác minh bằng 2 cặp
+--       "đăng ký lại" trong dữ liệu seed (cancelled+confirmed, failed+pending) cùng tồn tại.
+--     - Gemini và Cloudinary đã kết nối thật bằng khoá thật (không mock).
+--     - CORS đã mount với CORS_ORIGIN.
+--
+--   📦 DỮ LIỆU THỬ NGHIỆM — docs/seed.sql (mới ở mốc này):
+--     Idempotent, dọn theo đúng thứ tự khoá ngoại nên chạy lại bao nhiêu lần cũng cho cùng
+--     kết quả. Phủ đủ 9 danh mục sự kiện, 4 registration_status, 3 ticket_status,
+--     3 co_host_status, cả 2 checkin_method, 5 loại phản hồi.
+--     Chạy bằng `npm run seed` (KHÔNG chạy thẳng bằng psql) — scripts/gen-seed.ts lo 3 phần
+--     mà SQL thuần không làm được: băm bcrypt, ký tickets.jwt_code theo end_time THẬT của
+--     sự kiện (BR-99), và dựng lại toàn bộ khoá nghiệp vụ trên Redis.
+--
+--     ⚠️ BÀI HỌC VẬN HÀNH: reset CSDL mà KHÔNG dọn khoá Redis sẽ để lại trạng thái mồ côi.
+--     Ca đã gặp thật: khoá checkin:{ticketId} có TTL 24h (BR-91) sống sót qua lần seed sau,
+--     khiến một vé vừa được đưa về status='valid' vẫn trả 'already_checked_in' vì SET NX
+--     thất bại. Năm nhóm khoá cần dọn cùng lúc với CSDL:
+--       event:{eventId}:tickets · checkin:{ticketId} · hold:{registrationId}
+--       idem:{userId}:{key}     · active:{userId}
+-- ============================================================================
 --
 -- CHANGELOG v0.4.1 (30/07/2026, đồng bộ SRS v0.7.0 / API v0.5.0 — 6 nhóm cuối):
 --   KHÔNG có thay đổi DDL nào. Toàn bộ Check-in, Feedback&AI, Dashboard, Quản trị và
