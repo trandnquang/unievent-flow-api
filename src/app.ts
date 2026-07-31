@@ -1,6 +1,10 @@
+// PHẢI là import đầu tiên: vá `.openapi()` lên prototype Zod trước khi bất kỳ module schema
+// nào được nạp (xem src/docs/zod-openapi.ts).
+import './docs/zod-openapi';
 import express, { Request, Response, NextFunction } from 'express';
 import cors from 'cors';
 import apiV1Router from './routes';
+import { mountApiDocs } from './docs';
 import { env } from './config/env';
 import { errorHandler } from './middlewares/error.middleware';
 import { AppError } from './utils/errors';
@@ -29,6 +33,10 @@ app.get('/health', (_req: Request, res: Response) => {
     },
   });
 });
+
+// Tài liệu OpenAPI: Swagger UI ở /api-docs, spec thô ở /api-docs.json. Đặt ở host gốc,
+// NGOÀI tiền tố /api/v1 giống /health (api_spec.md mục 13).
+mountApiDocs(app);
 
 // Gắn toàn bộ endpoint API v1
 app.use('/api/v1', apiV1Router);

@@ -12,7 +12,8 @@
     "seed:admin": "tsx scripts/seedAdmin.ts",
     "seed": "tsx scripts/gen-seed.ts",
     "smoke": "npm run seed && tsx scripts/smoke.ts",
-    "check:connections": "tsx scripts/check-connections.ts"
+    "check:connections": "tsx scripts/check-connections.ts",
+    "check:openapi": "tsx scripts/check-openapi.ts"
   },
   "repository": {
     "type": "git",
@@ -27,6 +28,7 @@
   },
   "homepage": "https://github.com/trandnquang/unievent-flow-api#readme",
   "dependencies": {
+    "@asteasolutions/zod-to-openapi": "^9.1.0",
     "@google/genai": "^2.13.0",
     "@prisma/adapter-pg": "^7.8.0",
     "@prisma/client": "^7.8.0",
@@ -44,6 +46,7 @@
     "pg": "^8.22.0",
     "qrcode": "^1.5.4",
     "rate-limit-redis": "^6.0.0",
+    "swagger-ui-express": "^5.0.1",
     "zod": "^4.4.3"
   },
   "devDependencies": {
@@ -56,6 +59,7 @@
     "@types/nodemailer": "^8.0.1",
     "@types/pg": "^8.20.0",
     "@types/qrcode": "^1.5.6",
+    "@types/swagger-ui-express": "^4.1.8",
     "eslint": "^10.7.0",
     "prettier": "^3.9.5",
     "prisma": "^7.8.0",
