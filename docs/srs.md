@@ -2,7 +2,34 @@
 
 _Tài liệu chuẩn (single source of truth) của hệ thống UniEvent Flow, dùng làm ngữ cảnh cho Claude / Claude Code / Claude Design. Cấu trúc theo SRS v0.6.1; mọi sơ đồ được biểu diễn bằng mã Mermaid._
 
-_**Phiên bản: v1.0.0** — FR-01 → FR-42 (42 FR), 42 UC, 127 BR. Đồng bộ với API v1.0.0, ERD v1.0.0, SCHEMA v1.0.0._
+_**Phiên bản: v1.0.1** — FR-01 → FR-42 (42 FR), 42 UC, 127 BR. Đồng bộ với API v1.1.0, ERD v1.0.0, SCHEMA v1.0.0._
+
+> ## 📝 v1.0.1 — SỬA CASING TRONG VĂN XUÔI (01/08/2026)
+>
+> **Không đổi nghiệp vụ.** Giữ nguyên **42 FR / 42 UC / 127 BR**, không thêm/bớt FR, **không đổi
+> CSDL** (SCHEMA v1.0.0 và ERD v1.0.0 giữ nguyên, 0 dòng thay đổi). Toàn bộ mốc này chỉ đổi cách
+> **viết tên trường** trong văn xuôi và nhãn sơ đồ Mermaid cho khớp wire format snake_case đã chốt.
+>
+> **8 chỗ đã sửa:**
+>
+> 1. **BR-17** (§3.1.6) — `avatarUrl → avatar_url`, `socialLinks → social_links`, `clubName → club_name`.
+> 2. **BR-18** (§3.1.6) — `socialLinks → social_links`.
+> 3. **BR-26** (§3.1.8) — `clubName → club_name`, `avatarUrl → avatar_url`, `socialLinks → social_links`.
+> 4. **BR-101** (§3.7.4, UC-39) — `[isActive] → [is_active]`.
+> 5. **BR-110** (§3.7.5, UC-40) — `[organizerId] → [organizer_id]`.
+> 6. **UC-41 post-condition** (§3.8.1, FR-40) — `[coverImage] → [cover_image]`, `[avatarUrl] → [avatar_url]`.
+> 7. **Sơ đồ Mermaid §2.2.1** — nhãn `PATCH /users/me` đổi `socialLinks, clubName → social_links, club_name`.
+> 8. **Sơ đồ Mermaid §2.2.6** — nhãn `GET /admin/users` đổi `isActive → is_active`.
+>
+> **Hai chỗ CỐ Ý GIỮ NGUYÊN camelCase (không phải sót):**
+>
+> - **BR-91** — `SET checkin:{ticketId} <organizerId> NX EX 86400` là **giá trị khoá Redis**, không
+>   phải field trên wire; đổi sẽ làm sai mô tả lệnh Redis.
+> - **BR-92** — câu _"nếu biểu mẫu FR-38 nhận trường `clubName` mà không có cột tương ứng…"_ đang
+>   **mô tả vấn đề** (tên trường của biểu mẫu cũ) để giải thích vì sao cần cột `users.club_name`.
+>   Đổi máy móc sẽ làm câu mất nghĩa.
+>
+> Nguồn: đợt đồng bộ ngược từ Frontend sau khi dựng xong Module 1 — xem API spec v1.1.0 mục A.
 
 > ## 🏁 v1.0.0 — BẢN CHỐT (30/07/2026)
 >
@@ -393,7 +420,7 @@ flowchart TD
 
     T --> U{Thao tac ho so}
     U -->|Xem| V[GET /users/me]
-    U -->|Sua| W[PATCH /users/me - chi name, avatar, bio, socialLinks, clubName BR-17]
+    U -->|Sua| W[PATCH /users/me - chi name, avatar, bio, social_links, club_name BR-17]
     U -->|Doi mat khau| X[Xac minh mat khau cu, bam mat khau moi]
     U -->|Dang xuat| Y[Client xoa token - khong blacklist phia server]
 
@@ -659,7 +686,7 @@ Quản trị viên đăng nhập (role=admin) → tra cứu người dùng/sự 
 flowchart TD
     A([Admin dang nhap role=admin]) --> B{Chuc nang}
 
-    B -->|Tra cuu tai khoan FR-39| C[GET /admin/users - loc theo search/role/isActive BR-101]
+    B -->|Tra cuu tai khoan FR-39| C[GET /admin/users - loc theo search/role/is_active BR-101]
     C --> D[Danh sach co phan trang, KHONG chua password_hash]
     D --> E{Vo hieu hoa / kich hoat tai khoan?}
     E -->|Khong| B
@@ -1635,12 +1662,12 @@ flowchart TB
 
 **Business Rules**
 
-| **Step** | **BR Code** | **Description**                                                                                                                                                                                                                                                                                                                                                                                                                                                                           |
-| -------- | ----------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| (4)      | **BR-16**   | Validation Rules: Áp dụng CBR1 cho các trường bắt buộc gửi lên (ví dụ [Họ tên] không được để trống nếu có gửi trường này).                                                                                                                                                                                                                                                                                                                                                                |
-| (5)      | **BR-17**   | Field Restriction Rule: PATCH /users/me chỉ cho phép sửa {name, avatarUrl, bio, socialLinks, clubName}. Riêng clubName chỉ có ý nghĩa và chỉ được chấp nhận khi req.user.role = organizer — tài khoản Sinh viên/Quản trị viên gửi trường này sẽ bị bỏ qua (không báo lỗi, vì đây là trường không áp dụng chứ không phải giá trị sai). Không cho phép sửa [email], [role], [password_hash] qua endpoint này — đổi mật khẩu dùng UC-04; đổi email không hỗ trợ trong 7 tuần (out-of-scope). |
-| (6)      | **BR-18**   | Social Links Format Rule: socialLinks lưu dạng JSONB, là object với khoá chỉ thuộc đúng tập cố định {facebook, website, tiktok, discord, instagram, zalo} (xem mục 5.2) — không chấp nhận khoá ngoài tập này, không có cơ chế tự nhận diện domain để gán icon. Khoá vắng mặt/rỗng thì icon tương ứng ẩn trên trang công khai (UC-08). Giá trị không phải object hợp lệ hoặc chứa khoá lạ → lỗi validation 400.                                                                            |
-| (7)      | **BR-19**   | Update Rule: Trigger CSDL set_updated_at_users tự động gán lại updated_at. Trả HTTP 200 kèm thông tin user đã cập nhật.                                                                                                                                                                                                                                                                                                                                                                   |
+| **Step** | **BR Code** | **Description**                                                                                                                                                                                                                                                                                                                                                                                                                                                                              |
+| -------- | ----------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- ---|
+| (4)      | **BR-16**   | Validation Rules: Áp dụng CBR1 cho các trường bắt buộc gửi lên (ví dụ [Họ tên] không được để trống nếu có gửi trường này).                                                                                                                                                                                                                                                                                                                                                                   |
+| (5)      | **BR-17**   | Field Restriction Rule: PATCH /users/me chỉ cho phép sửa {name, avatar_url, bio, social_links, club_name}. Riêng club_name chỉ có ý nghĩa và chỉ được chấp nhận khi req.user.role = organizer — tài khoản Sinh viên/Quản trị viên gửi trường này sẽ bị bỏ qua (không báo lỗi, vì đây là trường không áp dụng chứ không phải giá trị sai). Không cho phép sửa [email], [role], [password_hash] qua endpoint này — đổi mật khẩu dùng UC-04; đổi email không hỗ trợ trong 7 tuần (out-of-scope).|
+| (6)      | **BR-18**   | Social Links Format Rule: social_links lưu dạng JSONB, là object với khoá chỉ thuộc đúng tập cố định {facebook, website, tiktok, discord, instagram, zalo} (xem mục 5.2) — không chấp nhận khoá ngoài tập này, không có cơ chế tự nhận diện domain để gán icon. Khoá vắng mặt/rỗng thì icon tương ứng ẩn trên trang công khai (UC-08). Giá trị không phải object hợp lệ hoặc chứa khoá lạ → lỗi validation 400.                                                                              |
+| (7)      | **BR-19**   | Update Rule: Trigger CSDL set_updated_at_users tự động gán lại updated_at. Trả HTTP 200 kèm thông tin user đã cập nhật.                                                                                                                                                                                                                                                                                                                                                                      |
 
 ### 3.1.7 UC-07: Quên mật khẩu (FR-07)
 
@@ -1730,10 +1757,10 @@ flowchart TB
 
 **Business Rules**
 
-| **Step** | **BR Code** | **Description**                                                                                                                                                                                                                                                                                                   |
-| -------- | ----------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| (3)      | **BR-26**   | Visibility Rule: GET /organizers/:userId chỉ trả dữ liệu nếu user.role = organizer; nếu không phải hoặc không tồn tại → HTTP 404. Trường trả về giới hạn: name, clubName (), avatarUrl, bio, socialLinks và danh sách sự kiện status=active do organizer này tổ chức — không bao giờ trả email hay password_hash. |
-| (4)      | **BR-27**   | Public Access Rule: Endpoint không yêu cầu đăng nhập (Public).                                                                                                                                                                                                                                                    |
+| **Step** | **BR Code** | **Description**                                                                                                                                                                                                                                                                                                     |
+| -------- | ----------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- --|
+| (3)      | **BR-26**   | Visibility Rule: GET /organizers/:userId chỉ trả dữ liệu nếu user.role = organizer; nếu không phải hoặc không tồn tại → HTTP 404. Trường trả về giới hạn: name, club_name (), avatar_url, bio, social_links và danh sách sự kiện status=active do organizer này tổ chức — không bao giờ trả email hay password_hash.|
+| (4)      | **BR-27**   | Public Access Rule: Endpoint không yêu cầu đăng nhập (Public).                                                                                                                                                                                                                                                      |
 
 ## 3.2 Quản lý sự kiện
 
@@ -3036,7 +3063,7 @@ flowchart TB
 | **Step** | **BR Code** | **Description**                                                                                                                                                                                                                                                                                                                                                                                                       |
 | -------- | ----------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | (3)      | **BR-100**  | Admin Lookup Role Rule: GET /admin/users yêu cầu requireRole('admin'). Đây là endpoint duy nhất trong hệ thống trả về địa chỉ email của người dùng khác — mọi endpoint public (BR-26) đều loại bỏ email khỏi response.                                                                                                                                                                                                |
-| (4)      | **BR-101**  | Filter & Pagination Rule: Hỗ trợ các tham số: [search] (khớp một phần trên name hoặc email, không phân biệt hoa thường), [role] (student │ organizer │ admin), [isActive] (true │ false), [page], [limit] (mặc định 20, tối đa 100). Kết quả sắp xếp theo created_at giảm dần. Response không bao giờ chứa password_hash hay reset_token, kể cả với vai trò Quản trị viên (CBR 2).                                    |
+| (4)      | **BR-101**  | Filter & Pagination Rule: Hỗ trợ các tham số: [search] (khớp một phần trên name hoặc email, không phân biệt hoa thường), [role] (student │ organizer │ admin), [is_active] (true │ false), [page], [limit] (mặc định 20, tối đa 100). Kết quả sắp xếp theo created_at giảm dần. Response không bao giờ chứa password_hash hay reset_token, kể cả với vai trò Quản trị viên (CBR 2).                                   |
 | (5)      | **BR-102**  | Self-Protection Rule: Danh sách trả về có gắn cờ để giao diện vô hiệu hoá nút thao tác trên chính tài khoản Quản trị viên đang đăng nhập; ở tầng backend, FR-29 từ chối request có userId trùng với req.user.id — **HTTP 403 `CANNOT_DISABLE_ADMIN`** theo BR-121. ⭐ **Sửa v0.7.0 (chốt mâu thuẫn M1):** bản trước ghi HTTP 422 ở đây trong khi BR-121 (v0.6.5) ghi 403 cho cùng một hành động; nay thống nhất **403** cho cả ba nhánh của BR-121, đúng nguyên tắc “một mã lỗi ↔ một HTTP status” đã áp dụng ở M2. Ngăn tình huống Quản trị viên tự khoá tài khoản của mình và làm hệ thống mất hoàn toàn quyền quản trị — vì không có luồng nào tạo lại tài khoản admin ngoài script seed (Assumption #11). |
 
 ### 3.7.5 UC-40: Tra cứu sự kiện toàn hệ thống (FR-39)
@@ -3076,18 +3103,18 @@ flowchart TB
 | **Step** | **BR Code** | **Description**                                                                                                                                                                                                                                                                                                                                                                                         |
 | -------- | ----------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | (3)      | **BR-103**  | Full Visibility Rule: GET /admin/events yêu cầu requireRole('admin') và trả về sự kiện ở mọi trạng thái, gồm cả status = cancelled. Đây là điểm khác biệt then chốt so với GET /events (BR-27) vốn chỉ trả sự kiện active cho người dùng công khai — nếu Quản trị viên dùng chung endpoint public thì không bao giờ nhìn thấy sự kiện đã huỷ để đối soát hay kiểm tra lại quyết định buộc huỷ trước đó. |
-| (4)      | **BR-110**  | Event Filter Rule: Hỗ trợ các tham số: [search] (khớp một phần trên title hoặc club_name), [status] (active │ cancelled), [organizerId], [page], [limit] (mặc định 20, tối đa 100). Mỗi bản ghi trả kèm tên và email người tổ chức, số vé đã phát hành, để Quản trị viên đánh giá mức độ ảnh hưởng trước khi quyết định buộc huỷ (BR-96).                                                               |
+| (4)      | **BR-110**  | Event Filter Rule: Hỗ trợ các tham số: [search] (khớp một phần trên title hoặc club_name), [status] (active │ cancelled), [organizer_id], [page], [limit] (mặc định 20, tối đa 100). Mỗi bản ghi trả kèm tên và email người tổ chức, số vé đã phát hành, để Quản trị viên đánh giá mức độ ảnh hưởng trước khi quyết định buộc huỷ (BR-96).                                                              |
 
 ## 3.8 Tiện ích dùng chung
 
 ### 3.8.1 UC-41: Tải ảnh lên (FR-40)
 
-| **Objective:**      | Cho phép người dùng tải tệp ảnh lên và nhận về một URL công khai, dùng cho ảnh bìa sự kiện (FR-08/FR-31) và ảnh đại diện tài khoản (FR-06).             |
-| ------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| **Actor:**          | Sinh viên (ảnh đại diện), Ban tổ chức (ảnh đại diện + ảnh bìa sự kiện), Quản trị viên.                                                                  |
-| **Trigger:**        | Người dùng chọn tệp ảnh trong biểu mẫu chỉnh sửa hồ sơ hoặc biểu mẫu tạo/sửa sự kiện.                                                                   |
-| **Pre-condition:**  | Người dùng đã đăng nhập (bất kể vai trò); tệp chọn là ảnh hợp lệ theo BR-104.                                                                           |
-| **Post-condition:** | Tệp được lưu trên dịch vụ lưu trữ bên thứ ba; hệ thống trả về URL công khai để client gán vào trường [coverImage] hoặc [avatarUrl] ở request tiếp theo. |
+| **Objective:**      | Cho phép người dùng tải tệp ảnh lên và nhận về một URL công khai, dùng cho ảnh bìa sự kiện (FR-08/FR-31) và ảnh đại diện tài khoản (FR-06).              |
+| ------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------- -|
+| **Actor:**          | Sinh viên (ảnh đại diện), Ban tổ chức (ảnh đại diện + ảnh bìa sự kiện), Quản trị viên.                                                                   |
+| **Trigger:**        | Người dùng chọn tệp ảnh trong biểu mẫu chỉnh sửa hồ sơ hoặc biểu mẫu tạo/sửa sự kiện.                                                                    |
+| **Pre-condition:**  | Người dùng đã đăng nhập (bất kể vai trò); tệp chọn là ảnh hợp lệ theo BR-104.                                                                            |
+| **Post-condition:** | Tệp được lưu trên dịch vụ lưu trữ bên thứ ba; hệ thống trả về URL công khai để client gán vào trường [cover_image] hoặc [avatar_url] ở request tiếp theo.|
 
 **Activities Flow**
 

@@ -287,7 +287,7 @@ export class CheckinService {
 
     const where = { tickets: { registrations: { event_id: eventId } } };
 
-    const [logs, total] = await Promise.all([
+    const [logs, total, confirmedCount, checkedInCount] = await Promise.all([
       prisma.checkin_logs.findMany({
         where,
         orderBy: { checkin_time: 'desc' },
@@ -310,10 +310,24 @@ export class CheckinService {
         },
       }),
       prisma.checkin_logs.count({ where }),
+      // ⭐ v1.1.0 (api_spec.md §5): hai con số của TOÀN SỰ KIỆN, ĐỘC LẬP với page/limit.
+      // Màn quét QR tại cổng (M2-S01/M2-S02) cần bộ đếm "đã vào / tổng" ngay đầu màn hình,
+      // nhưng GET /events/:id/dashboard là owner-only trong khi endpoint này là
+      // owner-or-cohost — không có summary ở đây thì Co-host không hiển thị được bộ đếm,
+      // hoặc phải tự cộng dồn theo trang (sai ngay khi có phân trang).
+      // Chỉ là 2 phép COUNT trên cột đã có từ SCHEMA v1.0.0 ⇒ không phát sinh DDL.
+      prisma.registrations.count({
+        where: { event_id: eventId, status: 'confirmed' },
+      }),
+      prisma.tickets.count({
+        where: { status: 'checked_in', registrations: { event_id: eventId } },
+      }),
     ]);
 
     return {
-      checkins: logs.map((log) => ({
+      // ⭐ v1.1.0: đổi tên khoá `checkins` → `items` cho khớp api_spec.md §5, đồng thời đồng
+      // bộ với GET /events/:eventId/registrations (§4b) vốn đã dùng `items`.
+      items: logs.map((log) => ({
         id: log.id,
         ticket_id: log.tickets.id,
         user_id: log.tickets.registrations.users.id,
@@ -324,6 +338,9 @@ export class CheckinService {
         checkin_method: log.checkin_method,
         checked_in_by: log.users?.name ?? null,
       })),
+      summary: { confirmed: confirmedCount, checked_in: checkedInCount },
+      // ⚠️ meta.pagination.total VẪN là số bản ghi checkin_logs — tổng của DANH SÁCH đang
+      // phân trang, khác về nghiệp vụ với summary.* (tổng toàn sự kiện). Đừng gộp hai cái.
       meta: buildPaginationMeta(page, limit, total),
     };
   }

@@ -31,6 +31,21 @@ Từ đây trở đi: **thay đổi nào cũng phải kèm cập nhật tài li�
 bản chốt v1.0.0, không còn ở trạng thái "đang đồng bộ ngược". Chạy lại `npm run smoke` sau mỗi
 thay đổi cross-cutting.
 
+### Bổ sung v1.1.0 — OpenAPI registry đã phủ 100%
+
+- **`/api-docs.json` nay lộ đủ 42 path key · 52 operation** (51 endpoint REST nghiệp vụ +
+  `GET /health`). Trước đợt này chỉ 8 operation của nhóm Auth & Account được đăng ký, nên
+  `npm run gen:api` phía frontend sinh ra client rỗng cho 36 màn còn lại — mã nguồn đã có
+  nhưng frontend không "nhìn thấy".
+- **`npm run check:openapi` không còn danh sách cứng.** Nó đọc `src/routes/*.ts` dưới dạng
+  **văn bản** (Express 5 đã bỏ `app._router`, và `import` file route sẽ mở kết nối
+  ioredis/BullMQ), rồi đối chiếu **hai chiều**: route thiếu tài liệu ⇒ đỏ, tài liệu thừa
+  operation ⇒ đỏ, `security.bearerAuth` lệch với `requireAuth` ⇒ đỏ. Thêm route mới mà quên
+  `registerPath` sẽ bị bắt ngay.
+- **`GET /health` được đăng ký kèm ghi đè `servers: [{url:'/'}]` ở cấp operation** vì nó nằm
+  ngoài tiền tố `/api/v1`. Bỏ dòng đó đi thì Swagger UI gọi `/api/v1/health` → 404.
+- 5 thay đổi hành vi D1–D5 của api_spec v1.1.0 đã hiện thực (xem bất biến #8, #9 bên dưới).
+
 ## Ràng buộc kỹ thuật cố định
 
 - Node.js + Express + TypeScript **strict mode**.
@@ -75,7 +90,25 @@ sẽ đỏ, nhưng lý do hỏng không hiển nhiên — nên đọc trước k
 6. **`GEMINI_MODEL` không được dùng bí danh trôi** (`gemini-flash-latest`): mô hình phía sau đổi thì
    kết quả phân tích tự đổi mà không có commit nào. Mặc định hiện tại `gemini-3.5-flash-lite`.
 7. **`tickets.jwt_code` KHÔNG được trả ra JSON** — nó chỉ sống trong ảnh QR (`qr_code_data_url`).
-   Cẩn thận khi `spread` bản ghi Prisma của bảng `tickets` vào response.
+   ⭐ v1.1.0: `ticket.service.ts` nay liệt kê **tường minh** từng field ở cả `getTicketForUser`
+   lẫn `listMyTickets`, thay cho `const { jwt_code, ...rest }` cũ. **Đừng đổi ngược về spread** —
+   cách cũ chỉ cần thêm một cột vào bảng `tickets` là âm thầm rò cột mới ra JSON.
+8. **`expires_at` ở nhánh phát lại Idempotency-Key phải đọc TTL CÒN LẠI từ Redis**, không được
+   dùng `now + REGISTRATION_HOLD_TTL_SECONDS` (`RegistrationService.holdExpiresAt`). Khoá giữ chỗ
+   đặt ở request GỐC, có thể đã trôi gần hết — trả mốc đầy đủ sẽ tặng client tối đa N giây ảo,
+   khiến đồng hồ đếm ngược ở M3-S03 chạy quá thời điểm job `timeout` đã bù trừ xong và người dùng
+   ngồi nhìn bộ đếm còn 40 giây cho một đăng ký đã `failed`.
+9. **Ghi đè khoá của schema có `.refine()` phải dùng `.safeExtend()`, KHÔNG phải `.extend()`.**
+   Zod 4 ném `Cannot overwrite keys on object schemas containing refinements` — và vì việc này
+   xảy ra lúc **import**, nó làm chết cả `npm run dev`, không chỉ tài liệu. Cạm bẫy: `.extend()`
+   dùng để **thêm khoá mới** vẫn hợp lệ, chỉ **ghi đè** mới hỏng — nên một phép thử vội bằng
+   `.extend({ khoá_mới })` sẽ báo "không sao" một cách sai lệch. Áp dụng cho
+   `createEventSchema` / `updateEventSchema` / `queryEventsSchema` / `create|updateEventScheduleSchema`
+   ở tầng `src/docs/schemas/*.docs.ts` (ghi đè field `z.coerce.date()` để bỏ `nullable: true` thừa).
+10. **Bộ quét route của `scripts/check-openapi.ts` PHẢI bỏ chú thích trước khi quét.**
+   `src/routes/organizer.routes.ts` có một comment cảnh báo chứa nguyên văn `router.use(requireAuth, …)`;
+   không strip comment thì bộ quét "đọc" chính lời cảnh báo đó và kết luận nhầm rằng cả file bị
+   khoá bởi guard cấp router, làm `GET /organizers/:userId` (PUBLIC theo BR-27) bị báo sai.
 
 ## Quy ước casing (wire format — KHÔNG hỏi lại)
 

@@ -46,7 +46,7 @@ export const updateProfileBodySchema = registry.register(
 
 // BR-18: tập khoá cố định của social_links. Lấy thẳng từ updateProfileSchema để một ngày
 // nào đó thêm/bớt mạng xã hội thì tài liệu tự đổi theo, không phải sửa hai nơi.
-const socialLinksSchema = registry.register(
+export const socialLinksSchema = registry.register(
   'SocialLinks',
   updateProfileSchema.shape.social_links.unwrap().openapi({
     description:

@@ -1,7 +1,10 @@
+import { Prisma } from '../../generated/prisma/client';
 import { prisma } from '../config/db';
 import { AppError } from '../utils/errors';
 import { sanitizeUser, SafeUser } from '../utils/user';
 import { UpdateProfileInput } from '../schemas/auth.schema';
+import { buildPaginationMeta } from '../schemas/common.schema';
+import { QueryOrganizersInput } from '../schemas/organizer.schema';
 
 export class UserService {
   // Lấy thông tin cá nhân của người dùng đang đăng nhập (FR-05)
@@ -52,6 +55,46 @@ export class UserService {
     });
 
     return sanitizeUser(updatedUser);
+  }
+
+  // Tra cứu Ban tổ chức để mời làm Co-host (FR-33/37, api_spec.md mục 2 - ⭐ v1.1.0)
+  //
+  // ⚠️ KHÁC BIỆT CỐT LÕI với GET /admin/users (FR-39): endpoint đó trả `email` và chỉ dành
+  // cho Quản trị viên. Ở đây người gọi là một Ban tổ chức bất kỳ, nên select TƯỜNG MINH đúng
+  // 4 cột {id, name, club_name, avatar_url} NGAY Ở TẦNG CSDL - KHÔNG BAO GIỜ email hay bất kỳ
+  // PII nào khác. Cùng nguyên tắc "select thẳng thay vì lọc sau query" đã dùng ở
+  // getOrganizerProfile (BR-26): dữ liệu không được đọc lên thì không thể vô tình rò ra.
+  public static async listOrganizers(query: QueryOrganizersInput) {
+    const { page, limit, search } = query;
+    const skip = (page - 1) * limit;
+
+    // Hai điều kiện CỐ ĐỊNH, không nhận từ client: chỉ Ban tổ chức, và chỉ tài khoản còn
+    // hiệu lực - mời một tài khoản đã bị vô hiệu hoá theo FR-29 là mời một chỗ trống.
+    const where: Prisma.usersWhereInput = { role: 'organizer', is_active: true };
+
+    // Khớp một phần trên name HOẶC club_name, không phân biệt hoa thường (cùng cách BR-101)
+    if (search) {
+      where.OR = [
+        { name: { contains: search, mode: 'insensitive' } },
+        { club_name: { contains: search, mode: 'insensitive' } },
+      ];
+    }
+
+    const [organizers, total] = await Promise.all([
+      prisma.users.findMany({
+        where,
+        orderBy: { name: 'asc' },
+        skip,
+        take: limit,
+        select: { id: true, name: true, club_name: true, avatar_url: true },
+      }),
+      prisma.users.count({ where }),
+    ]);
+
+    return {
+      items: organizers,
+      meta: buildPaginationMeta(page, limit, total),
+    };
   }
 
   // Hồ sơ công khai Ban tổ chức (FR-33) - BR-26: chỉ trả nếu role=organizer, trường

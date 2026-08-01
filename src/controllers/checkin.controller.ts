@@ -65,7 +65,8 @@ export class CheckinController {
 
       res.status(200).json({
         success: true,
-        data: { checkins: result.checkins },
+        // ⭐ v1.1.0 (api_spec.md §5): khoá `items` (trước là `checkins`) + khối `summary`
+        data: { items: result.items, summary: result.summary },
         meta: result.meta,
       });
     } catch (error) {

@@ -3,6 +3,7 @@ import { UserService } from '../services/user.service';
 import { FeedbackService } from '../services/feedback.service';
 import { updateProfileSchema } from '../schemas/auth.schema';
 import { queryMyFeedbacksSchema } from '../schemas/feedback.schema';
+import { queryOrganizersSchema } from '../schemas/organizer.schema';
 import { AppError } from '../utils/errors';
 
 export class UserController {
@@ -68,6 +69,26 @@ export class UserController {
       res.status(200).json({
         success: true,
         data: { feedbacks: result.feedbacks },
+        meta: result.meta,
+      });
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  // Tra cứu Ban tổ chức (GET /organizers - FR-33/37, Organizer đã đăng nhập)
+  public static async listOrganizers(
+    req: Request,
+    res: Response,
+    next: NextFunction
+  ): Promise<void> {
+    try {
+      const query = queryOrganizersSchema.parse(req.query);
+      const result = await UserService.listOrganizers(query);
+
+      res.status(200).json({
+        success: true,
+        data: { items: result.items },
         meta: result.meta,
       });
     } catch (error) {

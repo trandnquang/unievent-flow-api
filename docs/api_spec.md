@@ -1,7 +1,61 @@
 # THIẾT KẾ API — UniEvent Flow
 
 _Tài liệu đặc tả REST API — dùng làm API contract giữa Backend (Quang) và Frontend (Dũng)_
-_Phiên bản: **1.0.0** — Dựa trên SRS v1.0.0 (FR-01 → FR-42, 42 UC, 127 BR), ERD.md v1.0.0 và SCHEMA.sql v1.0.0_
+_Phiên bản: **1.1.0** — Dựa trên SRS v1.0.1 (FR-01 → FR-42, 42 UC, 127 BR), ERD.md v1.0.0 và SCHEMA.sql v1.0.0_
+
+> ## 📐 v1.1.0 — ĐỒNG BỘ NGƯỢC TỪ FRONTEND (01/08/2026)
+>
+> Mốc này sinh ra từ đợt rà soát của Frontend sau khi dựng xong Module 1: tài liệu **không sai
+> nghiệp vụ**, nhưng thiếu một số field mà giao diện cần và còn sót vài chỗ casing gây hiểu nhầm.
+> **Không đổi CSDL, không đổi nghiệp vụ** — số FR/UC/BR giữ nguyên 42/42/127.
+>
+> **A. Sửa casing (3 chỗ, §2 + §4) — nguyên nhân gây hỏng im lặng ở FE:**
+>
+> 1. **§2 `POST /auth/login`** → `{access_token, expires_in, user}` (bản trước ghi `{accessToken, expiresIn}`).
+> 2. **§2 `POST /auth/reset-password`** → body `{token, new_password}` (bản trước ghi `{newPassword}`).
+> 3. **§4 `GET /users/me/feedbacks`** → `{event_name, rating, content, created_at}` (bản trước ghi `{eventName, createdAt}`).
+>
+> Ba chỗ này là **mô tả sai**, không phải mã nguồn sai: wire format thật luôn là snake_case và đã
+> được smoke test 95/95 xác nhận. Cùng loại lỗi đã sửa cho `/auth/change-password` ở v1.0.0 mục 7.
+> ⚠️ Các mục "Đổi gì so với vX" phía dưới **vẫn giữ nguyên camelCase** — đó là ảnh chụp lịch sử
+> theo luật đã đặt ở v0.4.4 mục 2, không phải chỗ sót.
+>
+> **B. Bổ sung field cho màn hình đã chốt (KHÔNG thêm/bớt/đổi cột nào):**
+>
+> 4. **§4b `GET /events/:eventId/registrations`** — item thêm `checkin_method` (`'qr_scan'|'self'|null`)
+>    và `checked_in_at`, lấy qua LEFT JOIN `checkin_logs`. Trước đó chỉ có `checkin_status` nhị phân
+>    nên M4-S04/M2-S03 không phân biệt được quét-tại-cổng với tự-check-in, cũng không hiện được giờ vào.
+> 5. **§4 `GET /tickets/:ticketId`** — liệt kê rõ hình dạng `ticket`
+>    (`id, status, issued_at, event_title, holder_name, checked_in_at, join_url`); `join_url` chỉ
+>    xuất hiện khi `location_type='online'`. Giữ nguyên `qr_code_data_url`.
+> 6. **§4 `POST /events/:eventId/registrations`** — body 202 thêm `expires_at`
+>    (`now + REGISTRATION_HOLD_TTL_SECONDS`). **Giá trị tính, không phải cột** — để đồng hồ đếm
+>    ngược ở M3-S03 sống sót khi tải lại trang.
+> 7. **§5 `GET /events/:eventId/checkins`** — thêm `summary: {confirmed, checked_in}`. Màn quét là
+>    owner-or-cohost trong khi `/dashboard` (§7) là owner-only ⇒ không có field này thì **Co-host
+>    không có bộ đếm**. Hai con số là `COUNT` trên `registrations.status` và `tickets.status`.
+>
+> **C. Endpoint mới (1):**
+>
+> 8. **§2 `GET /organizers`** (Organizer, FR-33/37) — tìm BTC theo `search` trên `name`/`club_name`,
+>    trả `{id, name, club_name, avatar_url}` + phân trang, **không trả `email`/PII**. Phục vụ M4-S07
+>    (mời Co-host cần `user_id`) — trước đó FE không có cách hợp lệ nào lấy `user_id` vì
+>    `GET /admin/users` là Admin-only. Không thêm cột. **§11 cập nhật: Auth & Account 10 → 11,
+>    tổng 50 → 51 endpoint REST (+ `/health` = 52).**
+>
+> **D. Ghi chú cho frontend (không đổi contract):**
+>
+> 9. **§8 (FR-29)** — cảnh báo BR-108 "sự kiện mồ côi" **không có endpoint riêng**; FE tái dùng
+>    `GET /admin/events?organizer_id=X&status=active` trước khi `PATCH /admin/users/:id/status`.
+> 10. **§5 `GET /events/:eventId/checkins/export`** — endpoint cần Bearer nên **không dùng được
+>     `<a download>`**; phải `fetch` + header `Authorization` rồi đọc `arrayBuffer()` (giữ BOM UTF-8),
+>     bọc `Blob` mới trigger tải. Dùng `text()` sẽ bóc mất BOM và làm Excel vỡ tiếng Việt.
+>
+> ✅ **Trạng thái hiện thực (cập nhật):** mục 4–8 **đã hiện thực xong và đã đăng ký vào
+> `/api-docs.json`** — `npm run smoke` 95/95 PASS, `npm run check:openapi` 66/66 PASS với
+> **42 path key · 52 operation**. Frontend chạy `npm run gen:api` là có client đầy đủ cho cả 36 màn.
+>
+> **Không đụng SCHEMA/ERD (không thêm/bớt/đổi cột nào).**
 
 > ## 🏁 v1.0.0 — BẢN CHỐT (30/07/2026)
 >
@@ -277,13 +331,14 @@ Frontend chạy trên origin khác backend nên **bắt buộc** bật CORS, n�
 | Method | Endpoint                | Auth       | FR        | Mô tả                                                                                                                                                                                                                                                                |
 | ------ | ----------------------- | ---------- | --------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | POST   | `/auth/register`        | Public     | FR-01     | Body: `{name, email, password}` → 201 `{user}`. ⭐ **Sửa v0.3.0**: không còn nhận `role`/`organizerCode` — server luôn gán cứng `role='student'`. Tài khoản Organizer chỉ được tạo qua `POST /admin/organizers` (FR-38, mục 8)                                       |
-| POST   | `/auth/login`           | Public     | FR-02     | Body: `{email, password}` → 200 `{accessToken, expiresIn, user}`. Chặn nếu `is_active=false`                                                                                                                                                                         |
+| POST   | `/auth/login`           | Public     | FR-02     | Body: `{email, password}` → 200 `{access_token, expires_in, user}` ⭐ **casing sửa v1.1.0** (bản trước ghi `{accessToken, expiresIn}`). Chặn nếu `is_active=false`                                                                                                                                                                         |
 | POST   | `/auth/logout`          | Auth       | FR-03     | 204. Stateless JWT nên chỉ cần client xoá token                                                                                                                                                                                                                      |
 | POST   | `/auth/forgot-password` | Public     | FR-07     | Body: `{email}` → luôn trả 202 dù email có tồn tại hay không (chống dò email)                                                                                                                                                                                        |
-| POST   | `/auth/reset-password`  | Public     | FR-07     | Body: `{token, newPassword}` → 200. `token` là `reset_token` lưu ở `users`, có `reset_token_expires`                                                                                                                                                                 |
+| POST   | `/auth/reset-password`  | Public     | FR-07     | Body: `{token, new_password}` ⭐ **casing sửa v1.1.0** (bản trước ghi `{newPassword}`) → 200. `token` là `reset_token` lưu ở `users`, có `reset_token_expires`                                                                                                                                                                 |
 | POST   | `/auth/change-password` | Auth       | FR-04     | Body: `{old_password, new_password}` ⭐ **casing sửa v1.0.0** (bản trước mô tả bằng `{oldPassword, newPassword}` — wire format thật luôn là snake_case) → 200. NFR-08: hash lại bằng bcrypt trước khi lưu                                                             |
 | GET    | `/users/me`             | Auth       | FR-05     | 200 `{user}` (không trả `password_hash`)                                                                                                                                                                                                                             |
 | PATCH  | `/users/me`             | Auth       | FR-06     | Body: `{name?, avatar_url?, bio?, social_links?, club_name?}` ⭐ **casing sửa v0.5.0** → 200 `{user}`. ⭐ **v1.0**: `club_name` chỉ có ý nghĩa & chỉ được chấp nhận khi `role=organizer` (BR-17) — role khác gửi thì bỏ qua, không báo lỗi. Không cho sửa `email/role/password` qua endpoint này  |
+| GET    | `/organizers`           | Organizer  | FR-33/37  | ⭐ **mới v1.1.0** — Query `search?` (khớp một phần trên `name` **hoặc** `club_name`, không phân biệt hoa thường) + `page?, limit?` (§1.5) → 200 `{items: [{id, name, club_name, avatar_url}]}` + `meta.pagination`. **Không trả `email` hay bất kỳ PII nào** — đây là khác biệt cốt lõi với `GET /admin/users` (§8) vốn có `email` và chỉ dành cho Admin. Phục vụ M4-S07 (mời Co-host cần `user_id`, §3.4). Chỉ đọc `users` với `role='organizer'` **và** `is_active=true`; không phát sinh DDL |
 | GET    | `/organizers/:userId`   | **Public** | **FR-33** | 200 `{organizer: {name, club_name, avatar_url, bio, social_links}, events: [...]}` ⭐ **casing sửa v0.5.0** — ⭐ **v1.0** thêm `club_name` (BR-26); chỉ trả nếu `user.role=organizer`; 404 nếu không phải hoặc không tồn tại. `events` chỉ gồm sự kiện `status=active` do organizer này phụ trách |
 
 **Body chi tiết `PATCH /users/me`:**
@@ -392,12 +447,53 @@ Co-host **không có** endpoint chỉnh sửa "mức quyền" riêng — chỉ c
 
 | Method | Endpoint                                | Auth            | FR               | Mô tả                                                                                                                                                                                                                                               |
 | ------ | --------------------------------------- | --------------- | ---------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| POST   | `/events/:eventId/registrations`        | Student         | FR-14            | Không có body. Header tuỳ chọn `Idempotency-Key` (§1.7). → **202** `{registration_id, status:'pending'}`. Xem chi tiết luồng bên dưới                                                                                                                                                                                                                         |
+| POST   | `/events/:eventId/registrations`        | Student         | FR-14            | Không có body. Header tuỳ chọn `Idempotency-Key` (§1.7). → **202** `{registration_id, status:'pending', expires_at}` ⭐ **v1.1.0 thêm `expires_at`** = thời điểm hết hạn giữ chỗ (`now + REGISTRATION_HOLD_TTL_SECONDS`, mặc định 60s — biến đã có từ v0.4.8). Đây là **giá trị tính, KHÔNG phải cột CSDL** (không phát sinh DDL): trả về để màn M3-S03 dựng đồng hồ đếm ngược từ mốc tuyệt đối, nhờ vậy bộ đếm **sống sót khi tải lại trang** thay vì đếm từ 60 mỗi lần mount. Xem chi tiết luồng bên dưới                                                                                                                                                                                                                         |
 | GET    | `/registrations/:registrationId`        | Owner           | FR-15/16         | Polling trạng thái xử lý → 200 `{registration: {id, status: pending\|confirmed\|failed, requested_at, processed_at}, ticket?}` — `ticket` chỉ có khi `confirmed`. Owner-only theo `registration.user_id`; vé/đăng ký của người khác trả **404** (không phải 403) để không lộ sự tồn tại                                                                                                                                                                      |
 | POST   | `/registrations/:registrationId/cancel` | Student + Owner | **FR-34** ⭐ mới | Chỉ khi `status=confirmed` và `ticket.status=valid` → 200 `{registration, ticket}`, hoàn 1 vé về Redis. Vé đã `checked_in` → 422 `CANNOT_CANCEL_CHECKED_IN_TICKET`; registration đã `cancelled/failed/pending` → 422 `REGISTRATION_NOT_CANCELLABLE` |
 | GET    | `/users/me/tickets`                     | Student         | FR-17            | Query `page, limit` (§1.5) → 200 danh sách vé của chính sinh viên, mỗi item kèm `registration_id`, `registration_status` và `event` lồng bên trong                                                                                                                                                                                                                      |
-| GET    | `/users/me/feedbacks`                   | Student         | FR-42 ⭐ v0.4.3   | 200 danh sách **phản hồi do chính người dùng đã gửi** (`{eventName, rating, content, createdAt}`), chỉ đọc. Lọc theo `feedbacks.user_id = sub` (JWT). Phục vụ màn "Phản hồi đã gửi" (SRS §4.6.3, BR-122). Khác `GET /events/:id/feedbacks` (FR-24, dành cho Ban tổ chức) |
-| GET    | `/tickets/:ticketId`                    | Owner           | FR-18            | 200 `{ticket, qr_code_data_url}` — ⭐ **v0.4.8** đổi tên field sang snake_case. Ảnh QR là PNG base64 sinh tại chỗ từ `ticket.jwt_code`, không gọi dịch vụ ngoài. Owner-only gián tiếp qua `registration.user_id`; vé người khác → **404**                                                                                                                                                                                                                       |
+| GET    | `/users/me/feedbacks`                   | Student         | FR-42 ⭐ v0.4.3   | 200 danh sách **phản hồi do chính người dùng đã gửi** (`{event_name, rating, content, created_at}`) ⭐ **casing sửa v1.1.0** (bản trước ghi `{eventName, createdAt}`), chỉ đọc. Lọc theo `feedbacks.user_id = sub` (JWT). Phục vụ màn "Phản hồi đã gửi" (SRS §4.6.3, BR-122). Khác `GET /events/:id/feedbacks` (FR-24, dành cho Ban tổ chức) |
+| GET    | `/tickets/:ticketId`                    | Owner           | FR-18            | 200 `{ticket, qr_code_data_url}` — ⭐ **v0.4.8** đổi tên field sang snake_case. Ảnh QR là PNG base64 sinh tại chỗ từ `ticket.jwt_code`, không gọi dịch vụ ngoài. Owner-only gián tiếp qua `registration.user_id`; vé người khác → **404**. ⭐ **v1.1.0 — liệt kê rõ hình dạng `ticket`** (xem khối bên dưới)                                                                                                                                                                                                                       |
+
+### Hình dạng `ticket` của `GET /tickets/:ticketId` — ⭐ mới v1.1.0 (FR-18)
+
+Bản trước chỉ ghi `{ticket, qr_code_data_url}` mà không liệt kê field, khiến màn Chi tiết vé
+(M3-S05 in_person / M2-S04 online) phải đoán. Liệt kê rõ — **toàn bộ đọc từ cột đã có, không
+phát sinh DDL**:
+
+```jsonc
+{
+  "ticket": {
+    "id": "uuid",                            // tickets.id
+    "status": "valid",                       // tickets.status — valid | checked_in | cancelled
+    "issued_at": "2026-08-01T03:00:00.000Z", // tickets.issued_at
+    "event_title": "…",                      // events.title (JOIN qua registrations.event_id)
+    "holder_name": "…",                      // users.name  (JOIN qua registrations.user_id)
+    "checked_in_at": null,                   // checkin_logs.checkin_time — null nếu chưa check-in
+    "join_url": "https://meet…",             // events.join_url — CHỈ khi events.location_type='online'
+
+    // ↓ ba field đã có từ v0.4.8, GIỮ NGUYÊN — xem ghi chú "superset" bên dưới
+    "registration_id": "uuid",               // registrations.id
+    "registration_status": "confirmed",      // registrations.status
+    "event": { /* … bản rút gọn của events … */ }
+  },
+  "qr_code_data_url": "data:image/png;base64,…" // giữ nguyên như v0.4.8
+}
+```
+
+- ⚠️ **Đây là SUPERSET, không phải danh sách đóng.** Bốn field v1.1.0 (`event_title`,
+  `holder_name`, `checked_in_at`, `join_url`) được **THÊM VÀO**; ba field `registration_id`,
+  `registration_status` và `event` lồng vốn đã có từ v0.4.8 **được giữ nguyên**, vì bỏ chúng là
+  một breaking change không cần thiết với các consumer đang chạy. Đừng "sửa" mã nguồn cho khớp
+  một danh sách 7 field — mã nguồn đang đúng.
+- `checked_in_at` lấy qua **LEFT JOIN** `checkin_logs` theo `checkin_logs.ticket_id = tickets.id`
+  (`checkin_logs.ticket_id` là UNIQUE nên quan hệ 1-1). Vé chưa quét/chưa tự check-in ⇒ `null`.
+- `join_url` **chỉ xuất hiện** khi `events.location_type='online'`; sự kiện `in_person` **không có
+  khoá này** trong response (không phải `null`) — tránh lộ khoá vô nghĩa cho vé tại cổng.
+- Vé online dùng `join_url` cho hành động duy nhất "Vào phòng họp" (BR-107) — xem §5
+  `POST /tickets/:ticketId/self-checkin`.
+- ⚠️ `tickets.jwt_code` **KHÔNG BAO GIỜ** là field JSON (CLAUDE.md bất biến #7) — chuỗi đó chỉ
+  sống bên trong `qr_code_data_url`. Tầng service liệt kê **tường minh** từng field thay vì spread
+  bản ghi Prisma, nên rò rỉ là bất khả thi về mặt cấu trúc.
 
 ### Luồng `POST /events/:eventId/registrations` (bám theo SRS §2.2.3, BR-87→50)
 
@@ -418,7 +514,9 @@ Co-host **không có** endpoint chỉnh sửa "mức quyền" riêng — chỉ c
               ├─ đặt khoá hold:{registrationId} EX N   (BR-88a, quan sát/đối soát)
               ├─ hẹn giờ job timeout-{registrationId} delay N giây (BR-88b, bên bù trừ THẬT)
               ├─ đẩy job sinh vé vào BullMQ
-              └─ trả ngay 202 { data: { registration_id, status: "pending" } }
+              └─ trả ngay 202 { data: { registration_id, status: "pending", expires_at } }
+                 ⭐ v1.1.0: expires_at = now + REGISTRATION_HOLD_TTL_SECONDS (cùng mốc N ở
+                 hai dòng trên) — giá trị TÍNH, không phải cột; xem §4 bảng endpoint
 4. Worker (chạy nền) → confirm CÓ ĐIỀU KIỆN (BR-93 đối xứng), sinh Ticket (JWT/QR),
               xoá khoá hold + gỡ job timeout, gửi email xác nhận kèm QR qua queue 'email'
 5. Frontend poll GET /registrations/:registrationId (khuyến nghị mỗi 2s, tối đa ~15s)
@@ -500,7 +598,26 @@ Job email chỉ mang `ticket_id`; nội dung và người nhận được truy v
 
 | Method | Endpoint                         | Auth                            | FR    | Mô tả                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                  |
 | ------ | -------------------------------- | ------------------------------- | ----- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| GET    | `/events/:eventId/registrations` | Organizer + **Owner-or-CoHost** | FR-41 | Query `page, limit, status?, search?` (`status` ∈ `confirmed\|pending\|cancelled\|failed`; `search` khớp một phần trên `name`, không phân biệt hoa thường — ⭐ **mới v0.4.5**, phục vụ ô "Tìm theo tên…") → 200 `{ items: [{ user_id, name, email, registered_at, reg_status, checkin_status }] }` + `meta.pagination` chuẩn §1.5 ⭐ **casing + hình dạng meta sửa v0.5.0**. Trả danh sách người đã đăng ký của sự kiện, phục vụ tab "Người tham gia & Check-in". `checkin_status` suy ra từ `tickets.status` (`not_checked_in\|checked_in`). Dùng `requireOwnerOrCoHost` (SRS BR-113). ⚠️ Trả `email` là dữ liệu cá nhân (PII) — chỉ lộ cho chủ sự kiện/Co-host đã `accepted`, không public (SRS BR-114) |
+| GET    | `/events/:eventId/registrations` | Organizer + **Owner-or-CoHost** | FR-41 | Query `page, limit, status?, search?` (`status` ∈ `confirmed\|pending\|cancelled\|failed`; `search` khớp một phần trên `name`, không phân biệt hoa thường — ⭐ **mới v0.4.5**, phục vụ ô "Tìm theo tên…") → 200 `{ items: [{ user_id, name, email, registered_at, reg_status, checkin_status, checkin_method, checked_in_at }] }` + `meta.pagination` chuẩn §1.5 ⭐ **casing + hình dạng meta sửa v0.5.0** — ⭐ **v1.1.0 thêm `checkin_method` + `checked_in_at`** (xem khối bên dưới). Trả danh sách người đã đăng ký của sự kiện, phục vụ tab "Người tham gia & Check-in". `checkin_status` suy ra từ `tickets.status` (`not_checked_in\|checked_in`). Dùng `requireOwnerOrCoHost` (SRS BR-113). ⚠️ Trả `email` là dữ liệu cá nhân (PII) — chỉ lộ cho chủ sự kiện/Co-host đã `accepted`, không public (SRS BR-114) |
+
+**⭐ v1.1.0 — hai field mới `checkin_method` và `checked_in_at`** (SRS §4.3.7). Bản trước chỉ có
+`checkin_status` (nhị phân đã vào / chưa vào), nên tab "Người tham gia & Check-in" không phân biệt
+được người **quét QR tại cổng** với người **tự check-in online**, cũng không hiển thị được **giờ vào**:
+
+| Field            | Kiểu                          | Nguồn                                                    |
+| ---------------- | ----------------------------- | -------------------------------------------------------- |
+| `checkin_method` | `'qr_scan' \| 'self' \| null` | `checkin_logs.checkin_method` — `null` khi chưa check-in |
+| `checked_in_at`  | ISO-8601 UTC \| `null`        | `checkin_logs.checkin_time` — `null` khi chưa check-in   |
+
+Cách lấy: **LEFT JOIN** `registrations → tickets → checkin_logs`
+(`tickets.registration_id = registrations.id`, `checkin_logs.ticket_id = tickets.id`; cả hai khoá
+đều UNIQUE nên quan hệ là 1-1, không nhân bản dòng). Đăng ký chưa `confirmed` hoặc vé chưa được
+quét ⇒ cả hai field trả `null`, **cùng lúc** `checkin_status='not_checked_in'` — ba field luôn
+nhất quán với nhau.
+
+⚠️ **Không phát sinh DDL** — `checkin_logs.checkin_method` và `checkin_logs.checkin_time` đã tồn
+tại từ SCHEMA v1.0.0; đây thuần tuý là mở rộng phép chiếu (projection) của câu truy vấn.
+Phục vụ M4-S04 (desktop) và M2-S03 (mobile) — cùng FR-41, cùng contract.
 
 `registered_count` công khai (FR-09/FR-13) và endpoint FR-41 này khác nhau về mục đích: `registered_count` chỉ là **con số** hiển thị công khai; FR-41 là **danh sách chi tiết kèm PII**, chỉ dành cho người vận hành sự kiện. Tab UI gộp danh sách này với nút Quét QR (FR-19) và lịch sử check-in (FR-21) — xem SRS §4.3 (tab "Người tham gia & Check-in").
 
@@ -509,8 +626,8 @@ Job email chỉ mang `ticket_id`; nội dung và người nhận được truy v
 | Method | Endpoint                           | Auth                                      | FR        | Mô tả                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                |
 | ------ | ---------------------------------- | ----------------------------------------- | --------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | POST   | `/events/:eventId/checkin/scan` ⭐ **đổi path v0.5.0** | Organizer + **Owner-or-CoHost** ⭐ v0.3.0 | FR-19/20  | Body: `{qr_token}` → xác thực chữ ký JWT + kiểm `exp` (BR-99), trả kết quả **đồng bộ** trong <1s. ⭐ **v1.0 (BR-91)**: trước khi trả kết quả, đặt khoá `SET checkin:{ticketId} NX EX 86400` trên Redis để chốt nguyên tử — hai lần quét cùng vé chỉ 1 lần nhận `valid`, lần sau `already_checked_in`. Ghi `checkin_logs` + đổi `ticket.status` làm **bất đồng bộ** sau khi trả response (BR-62); nếu ghi thất bại sau retry → giải phóng khoá để quét lại (BR-94). **Chỉ áp dụng cho `location_type=in_person`** (BR-60) — sự kiện `online` trả **422 `EVENT_NOT_IN_PERSON`** (⭐ **tách mã v0.7.1**, trước dùng chung `EVENT_NOT_ONLINE` với luồng tự check-in). Dùng `requireOwnerOrCoHost`. ⭐ **v0.5.0 — vì sao đổi path:** bản trước là `POST /checkin/scan` với body chỉ có `{qrToken}`, nhưng cả `requireOwnerOrCoHost` (BR-63) lẫn bước so khớp `event_mismatch` (sơ đồ SRS §2.2.4) đều **cần eventId**, mà endpoint cũ không có nguồn nào cung cấp — nói cách khác endpoint như đặc tả cũ **không hiện thực được**. Đưa eventId lên đường dẫn giữ được middleware sẵn có nguyên vẹn |
-| GET    | `/events/:eventId/checkins`        | Organizer + **Owner-or-CoHost** ⭐ v0.3.0 | FR-21     | 200 danh sách check-in (gồm cả `checkin_method` để phân biệt quét tại cổng và tự check-in online)                                                                                                                                                                                                                                                                                                                                                                                                                                                    |
-| GET    | `/events/:eventId/checkins/export` | Organizer + **Owner-or-CoHost** ⭐ v0.3.0 | FR-22     | 200, `Content-Type: text/csv` — xuất file trực tiếp, không cần lưu file trung gian. ⭐ **v1.0.0 — chốt định dạng:** **CSV chuẩn RFC 4180 kèm BOM UTF-8**. Cụ thể: (a) file mở đầu bằng BOM `EF BB BF` — không có nó, Excel trên Windows đọc như ANSI và làm vỡ toàn bộ tiếng Việt; (b) **mọi ô đều bọc nháy kép**, kể cả ô không chứa ký tự đặc biệt; (c) nháy kép bên trong ô được nhân đôi; (d) xuống dòng **CRLF**. Cột: `Ho ten, Email, Ma ve, Thoi diem check-in, Hinh thuc, Nguoi quet`. ⚠️ Frontend lưu ý: `fetch().text()` **tự bóc BOM** theo thuật toán UTF-8 decode của WHATWG — muốn kiểm tra BOM phải đọc `arrayBuffer()`                                                                                                                                                                                                                                                                                                                                                                                                                                                                   |
+| GET    | `/events/:eventId/checkins`        | Organizer + **Owner-or-CoHost** ⭐ v0.3.0 | FR-21     | 200 `{ items: [...], summary: { confirmed, checked_in } }` — danh sách check-in (gồm cả `checkin_method` để phân biệt quét tại cổng và tự check-in online). ⭐ **v1.1.0 thêm `summary`** (xem khối bên dưới)                                                                                                                                                                                                                                                                                                                                                                                                                                                    |
+| GET    | `/events/:eventId/checkins/export` | Organizer + **Owner-or-CoHost** ⭐ v0.3.0 | FR-22     | 200, `Content-Type: text/csv` — xuất file trực tiếp, không cần lưu file trung gian. ⭐ **v1.0.0 — chốt định dạng:** **CSV chuẩn RFC 4180 kèm BOM UTF-8**. Cụ thể: (a) file mở đầu bằng BOM `EF BB BF` — không có nó, Excel trên Windows đọc như ANSI và làm vỡ toàn bộ tiếng Việt; (b) **mọi ô đều bọc nháy kép**, kể cả ô không chứa ký tự đặc biệt; (c) nháy kép bên trong ô được nhân đôi; (d) xuống dòng **CRLF**. Cột: `Ho ten, Email, Ma ve, Thoi diem check-in, Hinh thuc, Nguoi quet`. ⚠️ Frontend lưu ý: `fetch().text()` **tự bóc BOM** theo thuật toán UTF-8 decode của WHATWG — muốn kiểm tra BOM phải đọc `arrayBuffer()`. ⭐ **v1.1.0 — cách tải ở FE:** xem khối bên dưới                                                                                                                                                                                                                                                                                                                                                                                                                                                                   |
 | POST   | `/tickets/:ticketId/self-checkin`  | Student + Owner                           | **FR-36** | ⭐ **v0.5.2 — Request body: RỖNG** (`{}` hoặc không gửi body); endpoint **không nhận field nào**. Theo **BR-107** (SRS §3.4.5): việc client mở `join_url` chính là hành vi kích hoạt lời gọi này — frontend chỉ có một nút “Vào phòng họp”, bấm là vừa mở link vừa gọi endpoint. Server tự ghi `checkin_logs.checkin_time`; **không nhận mốc thời gian / bằng chứng nào do client gửi lên**. Chỉ hoạt động nếu `event.location_type=online` (ngược lại 422 `EVENT_NOT_ONLINE` — BR-65; ⭐ **v0.7.1** mã này nay CHỈ còn dùng cho ca này). ⭐ **v1.0 (BR-95)**: chỉ chấp nhận khi `event.status=active` VÀ thời điểm hiện tại trong khoảng **[start_time − 15p, end_time + 30p]**; ngoài khoảng → 422 `SELF_CHECKIN_WINDOW_CLOSED`. Ghi `checkin_logs` với `organizer_id=NULL, checkin_method=self`, đổi `ticket.status=checked_in` → 200 `{ticket}`                                                                                                                                                         |
 
 **Response `/events/:eventId/checkin/scan`:**
@@ -558,6 +675,59 @@ Không có khái niệm `result` như luồng quét QR vì đây là hành độ
 | 4 | **Trạng thái vé**            | `checked_in` / `cancelled`                                    | `valid` → **200 OK**; `checked_in` → **409 `ALREADY_CHECKED_IN`**; `cancelled` → **422 `TICKET_NOT_VALID`** |
 
 Thứ tự này có chủ đích: kiểm quyền sở hữu trước để không rò rỉ thông tin vé của người khác qua các mã lỗi phía sau; kiểm cửa sổ BR-95 **trước** trạng thái vé để sinh viên bấm ngoài giờ luôn nhận đúng thông điệp "chưa tới giờ / đã đóng" thay vì thông điệp về trạng thái vé.
+
+### `summary` của `GET /events/:eventId/checkins` — ⭐ mới v1.1.0 (FR-21)
+
+```jsonc
+{
+  "success": true,
+  "data": {
+    "items": [ /* … như cũ, mỗi item có checkin_method … */ ],
+    "summary": { "confirmed": 120, "checked_in": 87 }
+  },
+  "meta": { "pagination": { "page": 1, "limit": 20, "total": 87, "total_pages": 5 } }
+}
+```
+
+| Field                | Cách tính                                                                   |
+| -------------------- | --------------------------------------------------------------------------- |
+| `summary.confirmed`  | `COUNT(registrations)` của sự kiện với `registrations.status = 'confirmed'` |
+| `summary.checked_in` | `COUNT(tickets)` của sự kiện với `tickets.status = 'checked_in'`            |
+
+**Vì sao cần:** màn Quét QR tại cổng (M2-S01/M2-S02) cần bộ đếm "đã vào / tổng" ngay trên đầu màn
+hình, nhưng endpoint đó dùng `requireOwnerOrCoHost` trong khi `GET /events/:eventId/dashboard`
+(§7, FR-27) là **owner-only**. Không có `summary` ở đây thì **Co-host không thể hiển thị bộ đếm**
+— hoặc phải tự cộng dồn theo trang, sai ngay khi có phân trang. Hai con số là giá trị tổng của
+**toàn sự kiện**, độc lập với `page/limit`.
+
+⚠️ **Không phát sinh DDL** — chỉ là hai phép `COUNT` trên `registrations.status` và
+`tickets.status`, cả hai cột đã có từ SCHEMA v1.0.0.
+
+### Tải CSV `GET /events/:eventId/checkins/export` ở frontend — ⭐ mới v1.1.0 (FR-22)
+
+Endpoint này **yêu cầu `Authorization: Bearer`**, nên **KHÔNG dùng được `<a download>`** hay
+`window.open()`: trình duyệt điều hướng bằng một request riêng, không mang theo header — kết quả
+là **401**, không phải file. Cách đúng:
+
+```ts
+const res = await fetch(`${BASE_URL}/events/${eventId}/checkins/export`, {
+  headers: { Authorization: `Bearer ${accessToken}` },
+});
+if (!res.ok) throw await toApiError(res);   // rẽ nhánh theo error.code như mọi endpoint khác
+const buf = await res.arrayBuffer();        // arrayBuffer() — KHÔNG dùng text() (bóc mất BOM)
+const blob = new Blob([buf], { type: 'text/csv;charset=utf-8' });
+const url = URL.createObjectURL(blob);
+const a = Object.assign(document.createElement('a'), {
+  href: url,
+  download: `checkins-${eventId}.csv`,
+});
+a.click();
+URL.revokeObjectURL(url);
+```
+
+Điểm mấu chốt: đọc **`arrayBuffer()`** chứ không phải `text()` — `text()` decode theo WHATWG và
+**bóc mất BOM UTF-8**, khiến file tải về mở bằng Excel trên Windows vỡ hết tiếng Việt (đúng thứ mà
+BOM sinh ra để chống). Giữ nguyên byte từ server rồi mới bọc `Blob`.
 
 **Lỗi đặc thù nhóm này:** `EVENT_NOT_IN_PERSON` (422, ⭐ mới v0.7.1 — quét QR vào sự kiện online, BR-60), `EVENT_NOT_ONLINE` (422 — tự check-in vé của sự kiện in_person, BR-65), `SELF_CHECKIN_WINDOW_CLOSED` (422, ⭐ mới v1.0), `TICKET_NOT_FOUND` (404 — dùng thay 403 khi truy cập vé của người khác, để không lộ sự tồn tại), `ALREADY_CHECKED_IN` (409 ⭐ mới v0.5.0 — tự check-in lần hai), `TICKET_NOT_VALID` (422 ⭐ mới v0.5.0 — vé `cancelled` khi tự check-in). Ngoài ra dùng chung `result` codes ở trên cho luồng quét QR.
 
@@ -656,6 +826,27 @@ Tài khoản Organizer tạo qua endpoint này **luôn độc lập** với bấ
 
 ⭐ **v1.0**: lỗ hổng "Admin không có cách tra `userId`/`eventId`" nêu ở v0.3.0 nay đã được xử lý bằng nhóm FR-39 (`GET /admin/users`, `GET /admin/events`) ở bảng trên — FR-29/FR-30 nay dùng được thực tế, không chỉ đúng trên giấy.
 
+### Cảnh báo "sự kiện mồ côi" (BR-108) — ⭐ ghi chú v1.1.0, FR-29
+
+**BR-108 KHÔNG có endpoint riêng, và cũng không cần thêm.** Trước khi vô hiệu hoá một tài khoản
+Ban tổ chức, giao diện Admin phải cảnh báo về các sự kiện đang hoạt động sẽ mất người phụ trách.
+Frontend **tái dùng endpoint đã có** thay vì chờ contract mới:
+
+```
+1. Admin bấm "Vô hiệu hoá" trên một user có role='organizer'
+2. FE gọi GET /admin/events?organizer_id=<userId>&status=active   ← endpoint đã có (FR-39)
+3. meta.pagination.total > 0  → hộp thoại cảnh báo, liệt kê sự kiện bị ảnh hưởng (BR-108)
+   meta.pagination.total = 0  → hộp thoại xác nhận thường
+4. Admin xác nhận → PATCH /admin/users/:userId/status  { "is_active": false }
+```
+
+- Cả hai tham số đều đã hợp lệ theo **BR-110**: `organizer_id` là filter có sẵn, `status` nhận
+  `active | cancelled`. **Không thêm query param, không thêm endpoint, không phát sinh DDL.**
+- Bước 2 chỉ mang tính **cảnh báo cho người dùng**, không phải guard nghiệp vụ: quyết định chặn duy
+  nhất ở tầng backend vẫn là **BR-121** (`CANNOT_DISABLE_ADMIN`). Vô hiệu hoá BTC khi còn sự kiện
+  `active` là hành động **được phép** — chỉ cần Admin biết hệ quả trước khi bấm.
+- Với tài khoản `role='student'`, bỏ qua bước 2 (không thể có sự kiện phụ trách).
+
 **Lỗi đặc thù nhóm này:** dùng chung `403 FORBIDDEN` (sai role) và `404` (user/event không tồn tại); `EMAIL_ALREADY_EXISTS` (409, tái sử dụng cho FR-38); `EVENT_ALREADY_CANCELLED` (**409** ⭐ sửa v0.4.7, trước ghi 422 — nay khớp FR-11); `CANCEL_REASON_REQUIRED` (422 ⭐ mới v0.4.7, dùng chung với FR-11). ⭐ **Sửa v0.5.0 (chốt M1)**: FR-29 từ chối `userId` trùng `req.user.id` → **403 `CANNOT_DISABLE_ADMIN`**, thống nhất với BR-121 cho cả ba nhánh (chính mình / admin khác / admin cuối cùng). Bản trước ghi 422 ở dòng này trong khi cùng tài liệu ghi 403 ở cột mô tả FR-29 — mâu thuẫn cuối cùng của audit nay khép lại theo nguyên tắc “một mã lỗi ↔ một HTTP status” ở §1.3.
 
 ---
@@ -725,7 +916,7 @@ Dùng cho Render healthcheck khi deploy (NFR-07, nay là mục 6.4/6.6 trong SRS
 
 | Nhóm FR                                   | Số lượng FR   | Endpoint tương ứng                                                                                                                                                   |
 | ----------------------------------------- | ------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Auth & Account (FR-01→07, 33, 42)         | 9             | 10 endpoint (`/auth/*`, `/users/me`, `/users/me/feedbacks` ⭐ v0.4.3, `/organizers/:userId`)                                                                          |
+| Auth & Account (FR-01→07, 33, 42)         | 9             | **11 endpoint** ⭐ v1.1.0 (`/auth/*`, `/users/me`, `/users/me/feedbacks` ⭐ v0.4.3, **`GET /organizers` mới v1.1.0**, `/organizers/:userId`)                                                                          |
 | Quản lý sự kiện (FR-08→13, 31, 32, 37)    | 9             | **19 endpoint** ⭐ v0.4.7 (`/events*`, `/events/:id/schedule*`, `/events/:id/updates*` gồm PATCH/DELETE, `/events/:id/co-hosts*` gồm **`GET` mới v0.4.7** + `/co-hosts/me/accept`, `/co-hosts/me/decline`) |
 | Đăng ký & Vé (FR-14→18, 34, 35)           | 7             | 5 endpoint (`POST /events/:id/registrations`, `/registrations/:id` + `/cancel`, `/users/me/tickets`, `/tickets/:id`) + **2 worker nền** không endpoint ⭐ v0.4.8 (`processRegistration` FR-16, `sendEventReminder` FR-35)                                                                                         |
 | Người tham gia (FR-41) ⭐ mới v1.0        | 1             | 1 endpoint (`GET /events/:id/registrations`) — danh sách người đăng ký, gộp UI với Check-in                                                                          |
@@ -735,7 +926,7 @@ Dùng cho Render healthcheck khi deploy (NFR-07, nay là mục 6.4/6.6 trong SRS
 | **Quản trị hệ thống (FR-29, 30, 38, 39)** | **4** ⭐ v1.0 | **5 endpoint** ⭐ v1.0 (`/admin/users/:id/status`, `/admin/events/:id/force-cancel`, `/admin/organizers`, **`GET /admin/users`, `GET /admin/events`**)               |
 | **Tiện ích dùng chung (FR-40)** ⭐ v1.0   | **1**         | **1 endpoint** (`POST /uploads/image`)                                                                                                                               |
 
-Tổng: **42 FR → 50 endpoint REST nghiệp vụ + `GET /health` = 51 endpoint** ⭐ **v0.4.7** (cộng trực tiếp từ cột "Số lượng" của bảng trên: 10 + 19 + 5 + 1 + 4 + 4 + 1 + 5 + 1 = 50) + **5 worker nền** không lộ endpoint ⭐ **v0.5.0** — `emailWorker` (hàng đợi `email`, xử lý 5 loại email), `processRegistration` (FR-16), `sendEventReminder` (FR-35), `writeCheckinLog` (BR-62/94), `analyzeSentiment` (FR-25/26). **Toàn bộ 50/50 endpoint nay đã có mã nguồn.** _Endpoint thứ 50 là `GET /events/:eventId/co-hosts` — bổ sung ở v0.4.7 để màn hình quản trị Co-host (SRS §4.3.6b) có nguồn dữ liệu._ _Lịch sử tăng trưởng: 28 FR (v0.1.0) → 37 → 38 → 40 → 42 FR; các mốc trước là ảnh chụp lịch sử ở các mục "Đổi gì so với vX"._ Một số FR nền tảng/hệ thống (FR-15, FR-16, FR-20, FR-25, FR-26) không có endpoint riêng vì được thực hiện bên trong luồng của endpoint cha hoặc trong worker nền; FR-35 là worker thuần.
+Tổng: **42 FR → 51 endpoint REST nghiệp vụ + `GET /health` = 52 endpoint** ⭐ **v1.1.0** (cộng trực tiếp từ cột "Số lượng" của bảng trên: 11 + 19 + 5 + 1 + 4 + 4 + 1 + 5 + 1 = 51 — ⭐ **v1.1.0**: nhóm Auth & Account 10 → 11 do thêm `GET /organizers`; bản trước là 50 REST + `/health` = 51) + **5 worker nền** không lộ endpoint ⭐ **v0.5.0** — `emailWorker` (hàng đợi `email`, xử lý 5 loại email), `processRegistration` (FR-16), `sendEventReminder` (FR-35), `writeCheckinLog` (BR-62/94), `analyzeSentiment` (FR-25/26). **51/51 endpoint đã có mã nguồn và đã verify runtime** — ⭐ **v1.1.0**: `GET /organizers` (endpoint thứ 51) đã hiện thực, và **toàn bộ 51 endpoint + `GET /health` = 52 operation nay đã ĐĂNG KÝ vào `/api-docs.json`** (trước đó chỉ 8 operation của nhóm Auth & Account được đăng ký, nên frontend `npm run gen:api` sinh ra client rỗng cho 36 màn còn lại). `npm run check:openapi` đối chiếu **hai chiều** giữa `src/routes/*.ts` và tài liệu, nên path mới thêm mà quên đăng ký sẽ làm phép kiểm đỏ. Số chốt: **42 path key · 52 operation** (42 ≠ 52 vì nhiều path gộp 2 method, vd `/users/me` có `get`+`patch`). _Endpoint thứ 50 là `GET /events/:eventId/co-hosts` — bổ sung ở v0.4.7 để màn hình quản trị Co-host (SRS §4.3.6b) có nguồn dữ liệu._ _Lịch sử tăng trưởng: 28 FR (v0.1.0) → 37 → 38 → 40 → 42 FR; các mốc trước là ảnh chụp lịch sử ở các mục "Đổi gì so với vX"._ Một số FR nền tảng/hệ thống (FR-15, FR-16, FR-20, FR-25, FR-26) không có endpoint riêng vì được thực hiện bên trong luồng của endpoint cha hoặc trong worker nền; FR-35 là worker thuần.
 
 ---
 

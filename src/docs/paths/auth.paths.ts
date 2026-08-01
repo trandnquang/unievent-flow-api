@@ -5,7 +5,18 @@ import {
   successResponse,
   errorResponse,
   noContentResponse,
+  listResponse,
 } from '../envelope';
+import {
+  unauthorized,
+  accountDisabled,
+  validationError,
+  rateLimited,
+} from '../errors';
+import { jsonBody } from '../helpers';
+import { myFeedbackItemSchema, queryMyFeedbacksSchemaDocs } from '../schemas/feedback.docs';
+import { myTicketItemSchema } from '../schemas/ticket.docs';
+import { paginationQuerySchema } from '../schemas/common.docs';
 import {
   registerBodySchema,
   loginBodySchema,
@@ -17,7 +28,6 @@ import {
   loginResultSchema,
   messageResultSchema,
 } from '../schemas/auth.docs';
-import type { ZodType } from 'zod';
 
 // Nhóm Auth & Account — api_spec.md mục 2 (FR-01 → FR-07, FR-33).
 //
@@ -28,25 +38,8 @@ import type { ZodType } from 'zod';
 const TAG_AUTH = 'Auth';
 const TAG_ACCOUNT = 'Account';
 
-const jsonBody = (schema: ZodType, description: string) => ({
-  description,
-  required: true,
-  content: { 'application/json': { schema } },
-});
-
-// Hai lỗi này xuất hiện ở MỌI endpoint đã xác thực (requireAuth + requireActive, mục 1.4).
-const unauthorized = errorResponse('Chưa đăng nhập hoặc token hết hạn', [
-  'UNAUTHORIZED',
-]);
-const accountDisabled = errorResponse('Tài khoản đã bị vô hiệu hoá (FR-29)', [
-  'ACCOUNT_DISABLED',
-]);
-const validationError = errorResponse('Dữ liệu đầu vào không hợp lệ', [
-  'VALIDATION_ERROR',
-]);
-const rateLimited = errorResponse('Vượt rate limit (mục 1.6)', [
-  'TOO_MANY_REQUESTS',
-]);
+// `jsonBody` và bốn const lỗi dùng chung đã chuyển sang ../helpers và ../errors khi số nhóm
+// endpoint đi từ 1 lên 15 — import ở đầu file.
 
 // FR-01 — POST /auth/register
 registry.registerPath({
@@ -193,6 +186,42 @@ registry.registerPath({
   responses: {
     200: successResponse('Thông tin sau khi cập nhật', userResultSchema),
     400: validationError,
+    401: unauthorized,
+    403: accountDisabled,
+  },
+});
+
+// FR-17 — GET /users/me/tickets
+registry.registerPath({
+  method: 'get',
+  path: '/users/me/tickets',
+  tags: [TAG_ACCOUNT],
+  security: requiresAuth,
+  summary: 'Danh sách vé của tôi (FR-17)',
+  description:
+    'Chỉ role=student. Mỗi item kèm registration_id, registration_status và `event` lồng bên trong. ' +
+    'KHÔNG BAO GIỜ chứa tickets.jwt_code — chuỗi đó chỉ sống trong ảnh QR của GET /tickets/:ticketId.',
+  request: { query: paginationQuerySchema },
+  responses: {
+    200: listResponse('Danh sách vé', 'tickets', myTicketItemSchema),
+    401: unauthorized,
+    403: accountDisabled,
+  },
+});
+
+// FR-42 — GET /users/me/feedbacks
+registry.registerPath({
+  method: 'get',
+  path: '/users/me/feedbacks',
+  tags: [TAG_ACCOUNT],
+  security: requiresAuth,
+  summary: 'Phản hồi tôi đã gửi (FR-42)',
+  description:
+    'BR-122: chỉ đọc, lọc theo feedbacks.user_id = sub của JWT. Phục vụ màn "Phản hồi đã gửi" (SRS §4.6.3). ' +
+    'Khác GET /events/:eventId/feedbacks (FR-24) vốn dành cho Ban tổ chức xem phản hồi của sự kiện mình.',
+  request: { query: queryMyFeedbacksSchemaDocs },
+  responses: {
+    200: listResponse('Danh sách phản hồi đã gửi', 'feedbacks', myFeedbackItemSchema),
     401: unauthorized,
     403: accountDisabled,
   },

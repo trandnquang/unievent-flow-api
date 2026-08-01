@@ -1,7 +1,7 @@
 // Import ĐẦU TIÊN (xem zod-openapi.ts).
 import { z } from './zod-openapi';
 import type { ResponseConfig } from '@asteasolutions/zod-to-openapi';
-import type { ZodType } from 'zod';
+import type { ZodRawShape, ZodType } from 'zod';
 import { registry } from './registry';
 
 // Envelope chuẩn api_spec.md mục 1.2. Gom vào một chỗ để 50 endpoint không mỗi nơi mô tả một
@@ -104,3 +104,37 @@ export const errorResponse = (
 export const noContentResponse = (description: string): ResponseConfig => ({
   description,
 });
+
+interface ListResponseOptions {
+  /**
+   * Mặc định BẬT. Tắt tường minh cho endpoint danh sách KHÔNG phân trang — hiện có hai:
+   * GET /events/:id/schedule và GET /events/:id/co-hosts (service trả thẳng mảng, không meta).
+   */
+  withPagination?: boolean;
+  /** Khối phụ cùng cấp với mảng, vd `summary` của GET /events/:id/checkins (⭐ v1.1.0) */
+  extra?: ZodRawShape;
+}
+
+// Endpoint danh sách: { success, data: { <key>: [...], ...extra }, meta.pagination? }.
+//
+// `key` là tham số vì mỗi nhóm dùng một wrapper key riêng theo api_spec.md
+// (events · users · tickets · feedbacks · updates · schedule · co_hosts · items).
+export const listResponse = (
+  description: string,
+  key: string,
+  itemSchema: ZodType,
+  options: ListResponseOptions = {}
+): ResponseConfig =>
+  successResponse(
+    description,
+    z.object({ [key]: z.array(itemSchema), ...(options.extra ?? {}) }),
+    { withPagination: options.withPagination ?? true }
+  );
+
+// Response chỉ bọc MỘT object dưới một khoá — mẫu phổ biến nhất của repo:
+// {event}, {user}, {ticket}, {update}, {schedule_item}, {co_host}, {feedback}, {organizer}.
+export const wrappedResponse = (
+  description: string,
+  key: string,
+  schema: ZodType
+): ResponseConfig => successResponse(description, z.object({ [key]: schema }));

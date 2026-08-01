@@ -1,7 +1,8 @@
 # UniEvent Flow API — Hệ thống Đặt lịch Sự kiện & Check-in Học đường
 
 > **Đồ án tốt nghiệp** — Backend hoàn chỉnh, đang đóng mốc tài liệu **v1.0.0**.
-> 42 FR · **50 endpoint REST** + `GET /health` · 5 worker nền · 9 bảng PostgreSQL.
+> 42 FR · **51 endpoint REST** + `GET /health` · 5 worker nền · 9 bảng PostgreSQL.
+> Toàn bộ **52 operation đã đăng ký vào `/api-docs.json`** (42 path key).
 
 UniEvent Flow API là hệ thống backend quản lý sự kiện học đường: Ban tổ chức tạo và vận hành sự kiện, Sinh viên đăng ký nhận vé điện tử QR, nhân sự tại cổng quét vé check-in, và toàn bộ phản hồi sau sự kiện được phân tích cảm xúc bằng LLM.
 
@@ -197,7 +198,8 @@ npm run start
 
 ```bash
 npx tsc --noEmit   # kiểm kiểu tĩnh
-npm run smoke      # gọi thật toàn bộ 50 endpoint
+npm run smoke      # gọi thật toàn bộ 51 endpoint
+npm run check:openapi  # đối chiếu 2 chiều route Express ↔ /api-docs.json (cần `npm run dev` đang chạy)
 ```
 
 `npm run smoke` **luôn tự chạy `npm run seed` trước** — bắt buộc, vì bộ test thay đổi trạng thái thật (dùng `reset_token` một lần, check-in vé, huỷ sự kiện, gán nhãn cảm xúc). Chạy trên CSDL đã bẩn sẽ cho hàng loạt FAIL giả.
@@ -219,7 +221,8 @@ docs/                       # 4 tài liệu nguồn sự thật + seed.sql
 scripts/
 ├── seedAdmin.ts            # Tạo tài khoản Quản trị viên đầu tiên
 ├── gen-seed.ts             # Nạp seed.sql + bcrypt + ký JWT vé + dựng khoá Redis
-├── smoke.ts                # Kiểm thử đầu-cuối 50 endpoint
+├── smoke.ts                # Kiểm thử đầu-cuối 51 endpoint
+├── check-openapi.ts        # Quét src/routes/*.ts rồi đối chiếu 2 chiều với /api-docs.json
 └── check-connections.ts    # Kiểm kết nối PostgreSQL/Redis/Gemini/Cloudinary
 
 src/
@@ -419,7 +422,7 @@ Bốn tài liệu trong `docs/` là **nguồn sự thật duy nhất**. Không t
 | Tài liệu | Vai trò |
 | :--- | :--- |
 | `docs/srs.md` | Đặc tả nghiệp vụ (42 FR, 42 UC, 127 BR) — **thẩm quyền cao nhất về nghiệp vụ** |
-| `docs/api_spec.md` | Contract Backend ↔ Frontend (50 endpoint) |
+| `docs/api_spec.md` | Contract Backend ↔ Frontend (51 endpoint + `GET /health`) |
 | `docs/erd.md` | Quan hệ dữ liệu (9 bảng) |
 | `docs/schema.sql` | **Nguồn sự thật CSDL** — `prisma/schema.prisma` chỉ là bản introspect |
 

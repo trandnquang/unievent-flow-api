@@ -28,6 +28,10 @@ const IDEMPOTENCY_IN_PROGRESS = 'processing';
 export interface CreateRegistrationResult {
   registration_id: string;
   status: string;
+  // ⭐ v1.1.0 (api_spec.md §4): mốc TUYỆT ĐỐI hết hạn giữ chỗ (BR-88), để màn M3-S03 dựng
+  // đồng hồ đếm ngược từ một mốc cố định — bộ đếm nhờ đó SỐNG SÓT khi tải lại trang, thay
+  // vì đếm lại từ đầu mỗi lần mount. GIÁ TRỊ TÍNH, KHÔNG phải cột CSDL (không phát sinh DDL).
+  expires_at: Date;
 }
 
 export class RegistrationService {
@@ -117,7 +121,31 @@ export class RegistrationService {
     return {
       registration_id: registration.id,
       status: registration.status,
+      expires_at: await this.holdExpiresAt(registration.id),
     };
+  }
+
+  // ⭐ v1.1.0 — mốc hết hạn giữ chỗ CÒN LẠI THẬT của một đăng ký đã tồn tại.
+  //
+  // TUYỆT ĐỐI KHÔNG dùng `now + REGISTRATION_HOLD_TTL_SECONDS` ở nhánh phát lại idempotency:
+  // khoá giữ chỗ được đặt ở request GỐC và có thể đã trôi qua gần hết N giây. Trả mốc đầy đủ
+  // sẽ tặng client thêm tối đa N giây ảo — đồng hồ đếm ngược ở M3-S03 chạy quá thời điểm job
+  // 'timeout' đã bù trừ xong, người dùng ngồi nhìn bộ đếm còn 40 giây cho một đăng ký đã
+  // chuyển 'failed'. Nguồn sự thật duy nhất là TTL CÒN LẠI của chính khoá hold:.
+  private static async holdExpiresAt(registrationId: string): Promise<Date> {
+    // ioredis TTL: >0 = số giây còn lại · -1 = khoá tồn tại nhưng KHÔNG có hạn · -2 = không có khoá
+    const remaining = await redis.ttl(holdKey(registrationId));
+
+    // remaining <= 0 gộp cả ba ca "cửa sổ giữ chỗ đã đóng":
+    //   (a) -2: worker đã xử lý xong và xoá khoá (confirmed), hoặc bù trừ đã chạy (failed)
+    //   (b) -1: bất thường (khoá bị đặt lại không kèm EX) — coi như đã đóng, an toàn hơn
+    //   (c)  0: vừa đúng lúc hết hạn
+    // Trả CHÍNH thời điểm hiện tại (mốc quá khứ tức thì) thay vì null: giữ `expires_at` là
+    // field BẮT BUỘC trong contract 202 nên frontend không phải rẽ nhánh — đồng hồ hiện 0 và
+    // rơi ngay sang GET /registrations/:id, vốn mới là nguồn trạng thái thật (§4 bước 5).
+    if (remaining <= 0) return new Date();
+
+    return new Date(Date.now() + remaining * 1000);
   }
 
   private static async runRegistrationFlow(
@@ -187,6 +215,13 @@ export class RegistrationService {
       env.REGISTRATION_HOLD_TTL_SECONDS
     );
 
+    // ⭐ v1.1.0: tính NGAY SAU khi đặt khoá, dùng CÙNG một mốc N với `delay` của job 'timeout'
+    // bên dưới — để ba thứ (TTL khoá hold, hẹn giờ bù trừ, expires_at trả về client) không
+    // bao giờ lệch nhau. Ở nhánh chính khoá vừa được đặt nên now + N là chính xác.
+    const expiresAt = new Date(
+      Date.now() + env.REGISTRATION_HOLD_TTL_SECONDS * 1000
+    );
+
     // BR-50: đẩy job rồi trả 202 ngay, không đợi worker.
     // Job 'timeout' hẹn giờ đúng bằng TTL giữ chỗ là bên thực sự phát hiện quá hạn.
     await registrationQueue.add('process', {
@@ -212,7 +247,11 @@ export class RegistrationService {
       );
     }
 
-    return { registration_id: registration.id, status: registration.status };
+    return {
+      registration_id: registration.id,
+      status: registration.status,
+      expires_at: expiresAt,
+    };
   }
 
   // ------------------------------------------------- BR-88 / BR-89 / BR-93
@@ -310,25 +349,46 @@ export class RegistrationService {
           status: true,
           requested_at: true,
           users: { select: { id: true, name: true, email: true } },
-          tickets: { select: { status: true } },
+          // ⭐ v1.1.0 (api_spec.md §4b): LEFT JOIN registrations → tickets → checkin_logs.
+          // tickets.registration_id và checkin_logs.ticket_id ĐỀU UNIQUE nên quan hệ là 1-1 —
+          // mở rộng phép chiếu KHÔNG nhân bản dòng và KHÔNG phát sinh DDL.
+          tickets: {
+            select: {
+              status: true,
+              checkin_logs: {
+                select: { checkin_method: true, checkin_time: true },
+              },
+            },
+          },
         },
       }),
       prisma.registrations.count({ where }),
     ]);
 
     return {
-      items: registrations.map((registration) => ({
-        user_id: registration.users.id,
-        name: registration.users.name,
-        email: registration.users.email,
-        registered_at: registration.requested_at,
-        reg_status: registration.status,
-        // Suy ra từ tickets.status: vé đã checked_in nghĩa là người này đã có mặt
-        checkin_status:
-          registration.tickets?.status === 'checked_in'
-            ? 'checked_in'
-            : 'not_checked_in',
-      })),
+      items: registrations.map((registration) => {
+        const checkinLog = registration.tickets?.checkin_logs ?? null;
+
+        return {
+          user_id: registration.users.id,
+          name: registration.users.name,
+          email: registration.users.email,
+          registered_at: registration.requested_at,
+          reg_status: registration.status,
+          // Suy ra từ tickets.status: vé đã checked_in nghĩa là người này đã có mặt
+          checkin_status:
+            registration.tickets?.status === 'checked_in'
+              ? 'checked_in'
+              : 'not_checked_in',
+          // ⭐ v1.1.0 (api_spec.md §4b): phân biệt quét QR tại cổng với tự check-in online,
+          // và hiển thị giờ vào. Chưa đăng ký xong / vé chưa quét ⇒ cả hai null, CÙNG LÚC
+          // checkin_status='not_checked_in' — ba field luôn nhất quán vì cả writeCheckinLog
+          // (worker) lẫn CheckinService.selfCheckin đều đổi tickets.status VÀ ghi checkin_logs
+          // trong CÙNG một $transaction, không có cửa sổ "đã checked_in mà chưa có log".
+          checkin_method: checkinLog?.checkin_method ?? null,
+          checked_in_at: checkinLog?.checkin_time ?? null,
+        };
+      }),
       meta: buildPaginationMeta(page, limit, total),
     };
   }
