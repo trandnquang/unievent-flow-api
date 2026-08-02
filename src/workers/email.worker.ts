@@ -31,8 +31,11 @@ export const emailWorker = new Worker<EmailJobData>(
       default: {
         // Chặn ở tầng kiểu: thêm loại job mới mà quên xử lý sẽ lỗi biên dịch
         const unhandled: never = job.data;
+        // CBR 2: CHỈ in `type`, TUYỆT ĐỐI không JSON.stringify cả payload. Nhánh này hôm nay
+        // không tới được, nhưng payload email chứa mật khẩu tạm (organizer_credentials) và
+        // token đặt lại mật khẩu — thêm loại job thứ 6 mà quên `case` là đổ thẳng chúng ra log.
         throw new Error(
-          `Loại email job chưa được xử lý: ${JSON.stringify(unhandled)}`
+          `Loại email job chưa được xử lý: ${(unhandled as { type: string }).type}`
         );
       }
     }

@@ -21,6 +21,12 @@ const scheduleNotFound = errorResponse('Không tìm thấy mốc lịch trình',
   'SCHEDULE_ITEM_NOT_FOUND',
 ]);
 
+// BR-43b — chặn ở EventScheduleService (Zod không truy vấn được sự kiện để so khung giờ)
+const scheduleTimeOutOfRange = errorResponse(
+  'Mốc lịch trình nằm ngoài khung giờ sự kiện (BR-43b)',
+  ['SCHEDULE_TIME_OUT_OF_RANGE']
+);
+
 // FR-32 — GET /events/:eventId/schedule (Public)
 registry.registerPath({
   method: 'get',
@@ -46,7 +52,10 @@ registry.registerPath({
   tags: [TAG],
   security: requiresAuth,
   summary: 'Thêm mốc lịch trình (FR-32)',
-  description: 'Chủ sự kiện HOẶC Co-host đã accepted (requireOwnerOrCoHost).',
+  description:
+    'Chủ sự kiện HOẶC Co-host đã accepted (requireOwnerOrCoHost). ' +
+    'BR-43b: `start_time` phải nằm trong `[event.start_time, event.end_time]` (BIÊN ĐÓNG — ' +
+    'bằng đúng hai mốc là hợp lệ); ngoài khoảng trả 422 `SCHEDULE_TIME_OUT_OF_RANGE`.',
   request: {
     params: eventIdParam,
     body: jsonBody(createScheduleItemBodySchema, 'Mốc lịch trình mới'),
@@ -58,6 +67,7 @@ registry.registerPath({
       scheduleItemSchema
     ),
     400: validationError,
+    422: scheduleTimeOutOfRange,
     ...eventScopedErrors,
   },
 });
@@ -69,7 +79,9 @@ registry.registerPath({
   tags: [TAG],
   security: requiresAuth,
   summary: 'Sửa mốc lịch trình (FR-32)',
-  description: 'Chủ sự kiện HOẶC Co-host đã accepted.',
+  description:
+    'Chủ sự kiện HOẶC Co-host đã accepted. BR-43b được kiểm CHỈ KHI body có gửi `start_time`; ' +
+    'ngoài `[event.start_time, event.end_time]` trả 422 `SCHEDULE_TIME_OUT_OF_RANGE`.',
   request: {
     params: eventScheduleIdParam,
     body: jsonBody(updateScheduleItemBodySchema, 'Các trường cần cập nhật'),
@@ -81,6 +93,7 @@ registry.registerPath({
       scheduleItemSchema
     ),
     400: validationError,
+    422: scheduleTimeOutOfRange,
     ...eventScopedErrors,
     404: scheduleNotFound,
   },

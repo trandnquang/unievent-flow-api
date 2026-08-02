@@ -16,11 +16,37 @@ export class EventScheduleService {
     return schedule;
   }
 
+  // BR-43b (Schedule Time Bound Rule): start_time của mốc lịch trình phải nằm TRONG khung giờ
+  // của sự kiện. BIÊN ĐÓNG — bằng đúng event.start_time hoặc event.end_time là HỢP LỆ.
+  //
+  // Vì sao kiểm ở service chứ không phải Zod `.refine()`: quy tắc cần đọc event.start_time /
+  // end_time từ CSDL, mà schema Zod không truy vấn được. Zod vẫn giữ phần kiểm định dạng date.
+  private static async assertWithinEventWindow(
+    eventId: string,
+    startTime: Date
+  ): Promise<void> {
+    const event = await prisma.events.findUniqueOrThrow({
+      where: { id: eventId },
+      select: { start_time: true, end_time: true },
+    });
+
+    if (startTime < event.start_time || startTime > event.end_time) {
+      throw new AppError(
+        422,
+        'SCHEDULE_TIME_OUT_OF_RANGE',
+        'Thời gian mốc lịch trình phải nằm trong khung giờ diễn ra sự kiện'
+      );
+    }
+  }
+
   // Thêm mốc lịch trình mới (FR-32) - quyền đã được requireOwnerOrCoHost đảm bảo
   public static async createScheduleItem(
     eventId: string,
     input: CreateEventScheduleInput
   ) {
+    // BR-43b: chặn TRƯỚC khi ghi, để không có bản ghi nào lọt vào CSDL rồi mới báo lỗi
+    await this.assertWithinEventWindow(eventId, input.start_time);
+
     const scheduleItem = await prisma.event_schedule.create({
       data: {
         event_id: eventId,
@@ -58,6 +84,12 @@ export class EventScheduleService {
     input: UpdateEventScheduleInput
   ) {
     await this.findOwnedScheduleItem(eventId, scheduleId);
+
+    // BR-43b: partial update nên CHỈ kiểm khi body thực sự gửi start_time. Đặt sau
+    // findOwnedScheduleItem để giữ đúng thứ tự 404 (không thuộc sự kiện) trước 422 (sai giờ).
+    if (input.start_time !== undefined) {
+      await this.assertWithinEventWindow(eventId, input.start_time);
+    }
 
     const updatedScheduleItem = await prisma.event_schedule.update({
       where: { id: scheduleId },

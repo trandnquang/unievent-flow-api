@@ -4,8 +4,8 @@
 
 Không tự suy đoán, không tự thêm field / endpoint / bảng / cột / enum ngoài 4 tài liệu:
 
-- `docs/srs.md` — SRS **v1.0.0** (FR-01 → FR-42: 42 FR, 42 UC, 127 BR) — thẩm quyền nghiệp vụ cao nhất
-- `docs/api_spec.md` — API **v1.0.0** (50 endpoint; contract giữa Backend ↔ Frontend)
+- `docs/srs.md` — SRS **v1.0.3** (FR-01 → FR-42: 42 FR, 42 UC, **128 BR**) — thẩm quyền nghiệp vụ cao nhất
+- `docs/api_spec.md` — API **v1.1.2** (51 endpoint REST + `/health`; contract giữa Backend ↔ Frontend)
 - `docs/erd.md` — ERD **v1.0.0** (9 bảng)
 - `docs/schema.sql` — SCHEMA **v1.0.0** (nguồn sự thật CSDL; `prisma/schema.prisma` chỉ là bản introspect)
 - `docs/seed.sql` — dữ liệu thử nghiệm (idempotent), chạy bằng `npm run seed`
@@ -13,23 +13,35 @@ Không tự suy đoán, không tự thêm field / endpoint / bảng / cột / en
 Khi mâu thuẫn: về **nghiệp vụ** SRS > API > ERD; về **cấu trúc CSDL** thì `schema.sql` là chuẩn
 (Prisma chỉ `db pull`, không tự định nghĩa lược đồ).
 
-## Trạng thái hiện tại — doc **v1.0.0**, backend **đã verify runtime**
+> ⚠️ **Screen Registry v7.1 KHÔNG nằm ở repo này** — nó ở repo client
+> (`design/project/Screen Registry.dc.html`). Đừng đi tìm trong repo API.
+
+## Trạng thái hiện tại — SRS **v1.0.3** · API **v1.1.2** · ERD/SCHEMA **v1.0.0**
 
 Đợt hardening đã đóng. Backend không còn ở mức "đã có mã nguồn" mà **đã được gọi thật và xác minh**:
 
-- **50/50 endpoint verify runtime** — `npm run smoke` gọi lần lượt toàn bộ endpoint trên CSDL
-  đã seed, đạt **95/95 phép kiểm PASS**. Mỗi lời gọi kiểm 3 lớp: HTTP status · envelope §1.2 ·
-  quét đệ quy mọi khoá trong body bắt camelCase. Phủ 8 ca lỗi nghiệp vụ tiêu biểu và 2 luồng
-  bất đồng bộ (đăng ký → vé phát ra; phân tích cảm xúc → summary đổi số).
+- **Toàn bộ endpoint verify runtime** — `npm run smoke` gọi lần lượt trên CSDL đã seed, đạt
+  **104/104 phép kiểm PASS**. Mỗi lời gọi kiểm 3 lớp: HTTP status · envelope §1.2 · quét đệ quy
+  mọi khoá trong body bắt camelCase. Phủ 8 ca lỗi nghiệp vụ tiêu biểu và 2 luồng bất đồng bộ
+  (đăng ký → vé phát ra; phân tích cảm xúc → summary đổi số).
 - **Gemini + Cloudinary đã kết nối thật** bằng khoá thật, không mock (`npm run check:connections`
   → 6/6 PASS).
 - **CORS đã mount**; **hai `CHECK` chỉ-có-ở-SQL đã chặn ở tầng Zod/service**.
-- **4 tài liệu đã bump lên v1.0.0**, kèm `docs/seed.sql`.
 - README.md đã viết lại phản ánh trạng thái thật.
 
-Từ đây trở đi: **thay đổi nào cũng phải kèm cập nhật tài liệu tương ứng** — 4 tài liệu nay là
-bản chốt v1.0.0, không còn ở trạng thái "đang đồng bộ ngược". Chạy lại `npm run smoke` sau mỗi
-thay đổi cross-cutting.
+Từ đây trở đi: **thay đổi nào cũng phải kèm cập nhật tài liệu tương ứng** — không còn ở trạng
+thái "đang đồng bộ ngược". Chạy lại `npm run smoke` sau mỗi thay đổi cross-cutting.
+
+### Bổ sung v1.0.3 / v1.1.2 — bảo mật vé · đối soát bộ đếm · template email · BR-43b
+
+- **Rò `jwt_code` đã bịt ở 3 nơi** (chi tiết đăng ký, huỷ đăng ký, tự check-in) — xem bất biến #11.
+- **`TicketCounterService.reconcileMissingCounters()`** chạy lúc khởi động API, dựng lại bộ đếm
+  vé bị thiếu từ view (NFR-27) — xem bất biến #12. WARN "thiếu bộ đếm" nay là tín hiệu THẬT,
+  không còn là tiếng ồn thường trực.
+- **6 email đã có khung dùng chung** ở `src/emails/` (layout + blocks + templates), CSS inline,
+  bố cục table-based, nội dung do người dùng nhập được `escapeHtml`. Logo qua `APP_LOGO_URL`
+  (URL tuyệt đối, để rỗng thì rơi về wordmark chữ).
+- **BR-43b đã hiện thực** ở `EventScheduleService` — xem bất biến #13.
 
 ### Bổ sung v1.1.0 — OpenAPI registry đã phủ 100%
 
@@ -109,6 +121,23 @@ sẽ đỏ, nhưng lý do hỏng không hiển nhiên — nên đọc trước k
    `src/routes/organizer.routes.ts` có một comment cảnh báo chứa nguyên văn `router.use(requireAuth, …)`;
    không strip comment thì bộ quét "đọc" chính lời cảnh báo đó và kết luận nhầm rằng cả file bị
    khoá bởi guard cấp router, làm `GET /organizers/:userId` (PUBLIC theo BR-27) bị báo sai.
+11. **Mọi object `ticket` ra JSON PHẢI đi qua `sanitizeTicket` (`src/utils/ticket.ts`).**
+   Đây là hệ quả thao tác được của bất biến #7. Ba endpoint từng rò `jwt_code` vì cùng một
+   khuôn mẫu: `include: { tickets: true }` rồi `const { tickets, ...rest }` — Prisma nạp **mọi**
+   cột, spread trả **mọi** cột. Nay dùng `SAFE_TICKET_SELECT` ở truy vấn **và** `sanitizeTicket`
+   ở bước serialize (phòng vệ hai lớp). ⚠️ Bộ quét snake_case của `smoke.ts` **không** bắt được
+   lỗi này (`jwt_code` vốn đúng casing) — thêm endpoint trả `ticket` thì phải thêm phép kiểm
+   `expectNoJwtCode` tương ứng, nếu không nó lọt y như lần trước.
+12. **Routine đối soát bộ đếm vé dùng `SET NX`, TUYỆT ĐỐI không `SET` đè.**
+   `TicketCounterService.reconcileMissingCounters()` chạy ở `src/server.ts` **giữa** `pingRedis()`
+   và `app.listen` (dựng xong mới mở cổng ⇒ không có cửa sổ 500). `SET` đè sẽ ghi chồng lên
+   `DECR` đang bay từ luồng đăng ký và phát vé vượt `max_tickets`. Chỉ quét `status='active'` —
+   sự kiện đã huỷ cố tình bỏ qua (BR-96). Chỉ chạy ở tiến trình API, **không** thêm vào worker.
+13. **BR-43b chặn ở `EventScheduleService`, KHÔNG ở Zod.** Quy tắc cần đọc `event.start_time` /
+   `end_time` từ CSDL mà schema Zod không truy vấn được. Biên **ĐÓNG** (bằng đúng hai mốc là hợp
+   lệ); PATCH chỉ kiểm khi body có gửi `start_time`. ⚠️ `check:openapi` **chỉ** đối chiếu
+   route↔`registerPath`, **không** đối chiếu mã lỗi docs↔service — 5 ca biên trong `smoke.ts` là
+   lưới duy nhất bắt được lệch.
 
 ## Quy ước casing (wire format — KHÔNG hỏi lại)
 

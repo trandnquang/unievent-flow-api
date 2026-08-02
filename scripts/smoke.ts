@@ -88,6 +88,31 @@ const findCamelCaseKeys = (value: unknown, trail = ''): string[] => {
   return found;
 };
 
+// BR-109 / CLAUDE.md bất biến #7: tickets.jwt_code là credential của mã QR check-in, chỉ được
+// sống trong ảnh QR và ảnh đính kèm email — KHÔNG BAO GIỜ ra JSON.
+//
+// ⚠️ Bộ quét camelCase ở trên KHÔNG bắt được lỗi này: `jwt_code` vốn đã đúng snake_case. Đó là
+// lý do rò rỉ ở GET /registrations/:id lọt qua 95/95 phép kiểm suốt thời gian dài. Mỗi endpoint
+// trả object `ticket` PHẢI có một phép kiểm riêng ở đây.
+const expectNoJwtCode = (
+  label: string,
+  path: string,
+  ticket: unknown
+): void => {
+  const leaked =
+    ticket !== null && typeof ticket === 'object' && 'jwt_code' in ticket;
+  results.push({
+    n: ++counter,
+    label,
+    method: 'CHECK',
+    path,
+    expected: 'không có field jwt_code',
+    actual: leaked ? '⚠️ CÓ jwt_code' : ticket ? 'không có' : '(không có object ticket)',
+    pass: !leaked,
+    notes: leaked ? ['credential QR bị trả ra JSON'] : [],
+  });
+};
+
 interface CallOptions {
   token?: string | undefined;
   body?: unknown;
@@ -408,6 +433,56 @@ const main = async (): Promise<void> => {
     token: org1Token,
   });
 
+  // --- BR-43b Schedule Time Bound Rule (5 ca biên)
+  //
+  // ⚠️ `npm run check:openapi` CHỈ đối chiếu route ↔ registerPath, KHÔNG đối chiếu mã lỗi giữa
+  // tài liệu và service. Năm ca dưới đây là lưới DUY NHẤT bắt được lệch docs↔code của BR-43b.
+  //
+  // Mốc thời gian đọc từ chính sự kiện qua API, KHÔNG hard-code: seed dùng `now() + interval`
+  // nên mọi hằng số ghi cứng sẽ mục dần theo thời gian.
+  const myEvent = (await call('BR-43b lấy khung giờ sự kiện', 'GET', `/events/${myEventId}`, 200)).json?.data?.event;
+  const evStart = new Date(myEvent?.start_time).getTime();
+  const evEnd = new Date(myEvent?.end_time).getTime();
+
+  // Ca 1 + 2: BIÊN ĐÓNG — bằng đúng start_time và end_time đều PHẢI được chấp nhận
+  const atStartRes = await call('BR-43b biên dưới (= event.start_time)', 'POST', `/events/${myEventId}/schedule`, 201, {
+    token: org1Token,
+    body: { start_time: new Date(evStart).toISOString(), title: 'Đúng giờ khai mạc' },
+  });
+  const atEndRes = await call('BR-43b biên trên (= event.end_time)', 'POST', `/events/${myEventId}/schedule`, 201, {
+    token: org1Token,
+    body: { start_time: new Date(evEnd).toISOString(), title: 'Đúng giờ bế mạc' },
+  });
+
+  // Ca 3 + 4: ngoài khoảng ở cả hai phía → 422
+  await call('❗ SCHEDULE_TIME_OUT_OF_RANGE (trước start)', 'POST', `/events/${myEventId}/schedule`, 422, {
+    token: org1Token,
+    body: { start_time: new Date(evStart - 60_000).toISOString(), title: 'Sớm hơn 1 phút' },
+    expectCode: 'SCHEDULE_TIME_OUT_OF_RANGE',
+  });
+  await call('❗ SCHEDULE_TIME_OUT_OF_RANGE (sau end)', 'POST', `/events/${myEventId}/schedule`, 422, {
+    token: org1Token,
+    body: { start_time: new Date(evEnd + 60_000).toISOString(), title: 'Muộn hơn 1 phút' },
+    expectCode: 'SCHEDULE_TIME_OUT_OF_RANGE',
+  });
+
+  // Ca 5: PATCH KHÔNG gửi start_time thì bỏ qua hẳn phép kiểm BR-43b
+  const boundaryId: string = atStartRes.json?.data?.schedule_item?.id;
+  await call('BR-43b PATCH không gửi start_time (bỏ qua kiểm)', 'PATCH', `/events/${myEventId}/schedule/${boundaryId}`, 200, {
+    token: org1Token,
+    body: { title: 'Đổi mỗi tiêu đề' },
+  });
+
+  // Dọn hai mốc vừa tạo để lượt chạy sau không tích luỹ rác
+  for (const id of [boundaryId, atEndRes.json?.data?.schedule_item?.id]) {
+    if (id) {
+      await fetch(`${BASE}/events/${myEventId}/schedule/${id}`, {
+        method: 'DELETE',
+        headers: { Authorization: `Bearer ${org1Token}` },
+      });
+    }
+  }
+
   // --- Thông báo (4)
   await call('FR-31 xem thông báo', 'GET', `/events/${E.future}/updates?page=1&limit=5`, 200, {
     expectPagination: true,
@@ -485,9 +560,14 @@ const main = async (): Promise<void> => {
     notes: regStatus === 'confirmed' ? [] : [`worker không xác nhận sau ${polls} lần poll`],
   });
 
-  await call('FR-15 tra cứu đăng ký', 'GET', `/registrations/${registrationId}`, 200, {
+  const regDetailRes = await call('FR-15 tra cứu đăng ký', 'GET', `/registrations/${registrationId}`, 200, {
     token: studentToken,
   });
+  expectNoJwtCode(
+    'C3 jwt_code không lộ ở chi tiết đăng ký',
+    '/registrations/:id',
+    regDetailRes.json?.data?.ticket
+  );
 
   const myTicketsRes = await call('FR-17 vé sau khi đăng ký', 'GET', '/users/me/tickets?page=1&limit=50', 200, {
     token: studentToken,
@@ -567,9 +647,14 @@ const main = async (): Promise<void> => {
       dupStatuses[0] === 202 && dupStatuses[1] === 409 ? [] : [`nhận ${dupStatuses.join('+')}`],
   });
 
-  await call('FR-34 tự huỷ đăng ký', 'POST', `/registrations/${registrationId}/cancel`, 200, {
+  const cancelRes = await call('FR-34 tự huỷ đăng ký', 'POST', `/registrations/${registrationId}/cancel`, 200, {
     token: studentToken,
   });
+  expectNoJwtCode(
+    'C4 jwt_code không lộ ở huỷ đăng ký',
+    '/registrations/:id/cancel',
+    cancelRes.json?.data?.ticket
+  );
 
   await call('FR-34 huỷ lần hai', 'POST', `/registrations/${registrationId}/cancel`, 422, {
     token: studentToken,
@@ -692,9 +777,14 @@ const main = async (): Promise<void> => {
   });
 
   // FR-36 tự check-in sự kiện ONLINE đang trong cửa sổ
-  await call('FR-36 tự check-in online', 'POST', `/tickets/${T.selfCheckin}/self-checkin`, 200, {
+  const selfCheckinRes = await call('FR-36 tự check-in online', 'POST', `/tickets/${T.selfCheckin}/self-checkin`, 200, {
     token: studentToken,
   });
+  expectNoJwtCode(
+    'C5 jwt_code không lộ ở tự check-in',
+    '/tickets/:id/self-checkin',
+    selfCheckinRes.json?.data?.ticket
+  );
 
   await call('❗ ALREADY_CHECKED_IN (tự check-in lần 2)', 'POST', `/tickets/${T.selfCheckin}/self-checkin`, 409, {
     token: studentToken,

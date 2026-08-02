@@ -4,6 +4,7 @@ import { env } from '../config/env';
 import { redis } from '../config/redis';
 import { checkinQueue } from '../config/queues';
 import { AppError } from '../utils/errors';
+import { sanitizeTicket, SAFE_TICKET_SELECT } from '../utils/ticket';
 import { buildPaginationMeta, PaginationInput } from '../schemas/common.schema';
 import { buildCsv } from '../utils/csv';
 
@@ -274,10 +275,14 @@ export class CheckinService {
         },
       });
 
-      return tx.tickets.findUniqueOrThrow({ where: { id: ticketId } });
+      // BR-109: `select` tường minh — jwt_code không được nạp lên, không thể rò ra response
+      return tx.tickets.findUniqueOrThrow({
+        where: { id: ticketId },
+        select: SAFE_TICKET_SELECT,
+      });
     });
 
-    return { ticket: updated };
+    return { ticket: sanitizeTicket(updated) };
   }
 
   // Lịch sử check-in của sự kiện (FR-21, BR-63)

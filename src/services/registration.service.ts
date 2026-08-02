@@ -7,6 +7,7 @@ import {
   registrationTimeoutJobId,
 } from '../config/queues';
 import { AppError } from '../utils/errors';
+import { sanitizeTicket, SAFE_TICKET_SELECT } from '../utils/ticket';
 import { buildPaginationMeta } from '../schemas/common.schema';
 import { QueryEventRegistrationsInput } from '../schemas/registration.schema';
 import { TicketCounterService } from './ticketCounter.service';
@@ -297,7 +298,9 @@ export class RegistrationService {
   ) {
     const registration = await prisma.registrations.findUnique({
       where: { id: registrationId },
-      include: { tickets: true },
+      // BR-109: `select` tường minh để jwt_code KHÔNG được nạp lên bộ nhớ ngay từ truy vấn —
+      // lớp phòng vệ thứ nhất, độc lập với sanitizeTicket ở bước serialize bên dưới.
+      include: { tickets: { select: SAFE_TICKET_SELECT } },
     });
 
     if (!registration || registration.user_id !== userId) {
@@ -315,7 +318,7 @@ export class RegistrationService {
     // không phải lỗi HTTP.
     return {
       registration: rest,
-      ...(tickets ? { ticket: tickets } : {}),
+      ...(tickets ? { ticket: sanitizeTicket(tickets) } : {}),
     };
   }
 
@@ -402,7 +405,8 @@ export class RegistrationService {
   ) {
     const registration = await prisma.registrations.findUnique({
       where: { id: registrationId },
-      include: { tickets: true },
+      // BR-109: `select` tường minh, jwt_code không được nạp lên (xem sanitizeTicket)
+      include: { tickets: { select: SAFE_TICKET_SELECT } },
     });
 
     if (!registration || registration.user_id !== userId) {
@@ -458,7 +462,7 @@ export class RegistrationService {
 
       return tx.registrations.findUniqueOrThrow({
         where: { id: registrationId },
-        include: { tickets: true },
+        include: { tickets: { select: SAFE_TICKET_SELECT } },
       });
     });
 
@@ -466,7 +470,13 @@ export class RegistrationService {
     // hoàn vé trước rồi transaction thất bại sẽ phát dư một suất vé.
     await TicketCounterService.refundTicket(registration.event_id);
 
+    // Giữ nguyên hình dạng cũ của endpoint này: khoá `ticket` LUÔN có mặt, giá trị null khi
+    // không có vé (khác nhánh FR-15 phía trên vốn lược bỏ hẳn khoá). Contract cho phép cả hai
+    // (`ticket` là nullable+optional) — không đổi hình dạng để FE không phải sửa theo.
     const { tickets, ...rest } = cancelled;
-    return { registration: rest, ticket: tickets };
+    return {
+      registration: rest,
+      ticket: tickets ? sanitizeTicket(tickets) : null,
+    };
   }
 }

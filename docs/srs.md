@@ -2,7 +2,52 @@
 
 _Tài liệu chuẩn (single source of truth) của hệ thống UniEvent Flow, dùng làm ngữ cảnh cho Claude / Claude Code / Claude Design. Cấu trúc theo SRS v0.6.1; mọi sơ đồ được biểu diễn bằng mã Mermaid._
 
-_**Phiên bản: v1.0.1** — FR-01 → FR-42 (42 FR), 42 UC, 127 BR. Đồng bộ với API v1.1.0, ERD v1.0.0, SCHEMA v1.0.0._
+_**Phiên bản: v1.0.3** — FR-01 → FR-42 (42 FR), 42 UC, **128 BR**. Đồng bộ với API v1.1.2, ERD v1.0.0, SCHEMA v1.0.0._
+
+> ## 🩹 v1.0.3 — HIỆN THỰC BR-43b (02/08/2026)
+>
+> **Không đổi CSDL** (SCHEMA v1.0.0 và ERD v1.0.0 giữ nguyên, **0 dòng DDL**), **không đổi số
+> FR/UC/BR** (42/42/128). Bản này chỉ đưa **mã nguồn bắt kịp đặc tả**.
+>
+> **BR-43b đã được hiện thực ở backend.** `POST` và `PATCH /events/:eventId/schedule` nay chặn
+> `start_time` nằm ngoài `[event.start_time, event.end_time]` bằng **422
+> `SCHEDULE_TIME_OUT_OF_RANGE`**. Kiểm tại `EventScheduleService.assertWithinEventWindow` —
+> **không** dùng Zod `.refine()` vì quy tắc cần truy vấn sự kiện, mà schema thì không truy vấn
+> được. PATCH chỉ kiểm khi body có gửi `start_time`. Biên **ĐÓNG**: bằng đúng hai mốc là hợp lệ.
+>
+> Mã lỗi đã được đăng ký vào `/api-docs.json` (`npm run gen:api` phía frontend nay sinh được
+> nhánh này). Các khối cảnh báo "⚠️ CHƯA hiện thực" của v1.0.2 (SRS §3.2.8 + changelog, API §3.2 +
+> changelog) đã được gỡ vì không còn đúng.
+> Nghiệm thu: `npm run smoke` **104/104 PASS** (thêm 5 ca biên BR-43b + 3 ca chống rò `jwt_code`),
+> `npm run check:openapi` **66/66 PASS**.
+>
+> **Việc còn lại ở repo khác:** Screen Registry v7.1 (`design/project/Screen Registry.dc.html`,
+> **repo client**) vẫn còn ghi chú "backend chưa hiện thực" ở state `err_time_out_of_range` của
+> M4-S05 — cần gỡ ở một pass phía client, không sửa được từ repo API.
+
+> ## 🧭 v1.0.2 — ĐỒNG BỘ NHÃN GIAO DIỆN + BR-43b (02/08/2026)
+>
+> **Không đổi CSDL** (SCHEMA v1.0.0 và ERD v1.0.0 giữ nguyên, **0 dòng thay đổi**), **không đổi số
+> FR/UC** (vẫn 42/42). **BR: 127 → 128** — thêm đúng một quy tắc mới **BR-43b**.
+>
+> **1. §4.0.1 #6 — nhãn vòng đời sự kiện: 3 → 4 giá trị.** Bản trước chỉ liệt kê _Đang mở / Sắp mở /
+> Đã kết thúc_, thiếu **“Đã huỷ”** (suy từ `status = cancelled`), nên mỗi màn tự đặt một chữ khác
+> nhau cho sự kiện đã huỷ. Ghi rõ cả 4 vẫn là **giá trị SUY RA** từ thời gian + trạng thái, không
+> phải cột CSDL, và **không** hàm ý có thêm mốc “mở đăng ký” riêng. Khớp Screen Registry v7 và hằng
+> `EVENT_LIFECYCLE_LABEL` phía frontend — cả hai đã dùng 4 nhãn từ trước, tài liệu là chỗ còn sót.
+>
+> **2. §4.0 — tab giữa của “Sự kiện của tôi” (Sinh viên): “Đã tham gia” → “Đã diễn ra”.** Tab lọc
+> theo **sự kiện đã qua** nên chứa cả vé của người **không dự (no-show)**; nhãn cũ mô tả sai chính
+> dữ liệu đang hiển thị. Phân biệt có dự hay không nằm ở badge từng dòng. Khớp `tab_đã_diễn_ra`
+> (M3-S04) của Screen Registry. Chỉ đổi **nhãn hiển thị** — không đổi FR-17, không đổi truy vấn.
+>
+> **3. §3.2.8 (UC-16/FR-32) — thêm BR-43b “Schedule Time Bound Rule”.** `start_time` của mốc lịch
+> trình phải nằm trong `[event.start_time, event.end_time]`; ngoài khoảng → **422
+> `SCHEDULE_TIME_OUT_OF_RANGE`**. Kiểm ở tầng ứng dụng, **không thêm cột / không thêm CHECK**.
+> Tại thời điểm chốt v1.0.2 đây là **đặc tả đi trước mã nguồn**; backend đã hiện thực ở **v1.0.3**.
+> Ma trận truy vết FR-32 cập nhật theo (BR-42, BR-43, **BR-43b**).
+>
+> Nguồn: pass đồng bộ tài liệu ↔ Screen Registry v7 (02/08/2026). Xem API spec v1.1.1.
 
 > ## 📝 v1.0.1 — SỬA CASING TRONG VĂN XUÔI (01/08/2026)
 >
@@ -2107,6 +2152,7 @@ flowchart TB
 | -------- | ----------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
 | (4)      | **BR-42**   | Owner-or-Co-host Rule: Middleware requireOwnerOrCoHost (CBR 6) cho phép chủ sự kiện HOẶC Co-host có status = accepted thêm/sửa/xoá mốc lịch trình (bảng event_schedule). |
 | (5)      | **BR-43**   | Ordering Rule: start_time và title bắt buộc cho mỗi mốc; trường sort_order quyết định thứ tự hiển thị trên giao diện.                                                    |
+| (5)      | **BR-43b**  | Schedule Time Bound Rule ⭐ **mới v1.0.2**: `start_time` của mỗi mốc lịch trình bắt buộc nằm trong khoảng `[event.start_time, event.end_time]` (bao gồm hai đầu mút), áp dụng cho cả thêm mới lẫn sửa. Ngoài khoảng → **HTTP 422 `SCHEDULE_TIME_OUT_OF_RANGE`**. Kiểm ở tầng ứng dụng (đọc `events.start_time`/`end_time` của chính `eventId` trong URL), **không** có ràng buộc CSDL tương ứng — không thêm cột, không thêm CHECK. Lý do: lịch trình là phần chia nhỏ _bên trong_ một sự kiện; một mốc rơi ngoài khung giờ sự kiện luôn là lỗi nhập liệu, và nếu để lọt thì giao diện timeline (M4-S05) phải tự bịa cách hiển thị mốc nằm ngoài trục thời gian. **Đã hiện thực từ v1.0.3** tại `EventScheduleService.assertWithinEventWindow` — Zod `.refine()` không đủ vì cần truy vấn sự kiện, nên phép kiểm nằm ở tầng service; PATCH chỉ kiểm khi body có gửi `start_time`. |
 
 ### 3.2.9 UC-17: Gắn Co-host, Chấp nhận/Từ chối lời mời (FR-37)
 
@@ -3175,9 +3221,11 @@ Bảng dưới đây đặc tả cấu trúc navbar dùng chung cho toàn bộ m
 | **Mục nav**     | **Sinh viên**                                                                                 | **Ban tổ chức**                                                                                                        | **Quản trị viên**                                                                                                       |
 | --------------- | --------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------- |
 | Khám phá        | ✅ (FR-13/FR-09, Public)                                                                      | ✅                                                                                                                     | ✅                                                                                                                      |
-| Sự kiện của tôi | ✅ — vé đã đăng ký/đã tham gia (FR-17), chia tab Sắp diễn ra/Đã tham gia/Đã huỷ               | ✅ — sự kiện làm chủ + đồng hành (FR-12 mở rộng, UC-13); là entry point duy nhất vào toàn bộ chức năng quản lý sự kiện | ❌ ẩn — Admin không sở hữu/tham dự sự kiện nào                                                                          |
+| Sự kiện của tôi | ✅ — vé đã đăng ký (FR-17), chia tab Sắp diễn ra/Đã diễn ra/Đã huỷ ⭐ v1.0.2                   | ✅ — sự kiện làm chủ + đồng hành (FR-12 mở rộng, UC-13); là entry point duy nhất vào toàn bộ chức năng quản lý sự kiện | ❌ ẩn — Admin không sở hữu/tham dự sự kiện nào                                                                          |
 | Quản lý         | ❌ ẩn                                                                                         | ❌ không cần mục riêng (đã gộp vào “Sự kiện của tôi”)                                                                  | ✅ — mục toàn cục: Quản lý người dùng (FR-29), Tạo tài khoản Ban tổ chức (FR-38), Quản lý sự kiện toàn hệ thống (FR-30) |
 | Dropdown avatar | “Hồ sơ của tôi” (gộp xem/sửa hồ sơ + tab đổi mật khẩu, xem UC-05/06/04) + “Đăng xuất” (UC-03) | (như Sinh viên)                                                                                                        | (như Sinh viên)                                                                                                         |
+
+⭐ **v1.0.2 — đổi nhãn tab giữa của “Sự kiện của tôi” (Sinh viên): “Đã tham gia” → “Đã diễn ra”.** Tab này lọc theo **sự kiện đã qua**, nên chứa cả vé của người **không dự (no-show)**; gọi là “Đã tham gia” là mô tả sai chính dữ liệu đang hiển thị. Việc phân biệt có dự hay không nằm ở **badge trên từng dòng** (đã check-in / không dự), không nằm ở tên tab. Khớp Screen Registry `tab_đã_diễn_ra` của M3-S04. Đây chỉ là **đổi nhãn hiển thị** — không đổi FR-17, không đổi truy vấn, không thêm cột.
 
 Ghi chú thiết kế: không xây dựng notification center/bell icon toàn cục (xem NFR 6.8 — kênh thông báo real-time nằm ngoài phạm vi đồ án). Lời mời Co-host đang chờ được hiển thị dưới dạng banner tại đúng trang “Sự kiện của tôi” (BR-38b), không dùng cơ chế thông báo chung.
 
@@ -3192,7 +3240,7 @@ Ghi chú thiết kế: không xây dựng notification center/bell icon toàn c�
 3. **Mã vé rút gọn (vd `A1B2-3C4D`) là mã tham chiếu hiển thị**, suy ra từ id vé — **không** là cột riêng trong CSDL và **không** có luồng nhập tay. Nghiệp vụ **nhập mã thủ công đã loại khỏi phạm vi**; check-in chỉ qua quét QR (JWT) và tự check-in online.
 4. **`checkin_method` chỉ có 2 giá trị hiển thị:** “Quét QR” và “Tự check-in”. Không có nhãn “Nhập tay”; không hiển thị dữ liệu cổng/trạm (CSDL không lưu).
 5. **Tự check-in online phải gate theo khung giờ (BR-95):** nút chỉ bật trong `[start − 15 phút, end + 30 phút]`; ngoài khoảng → disabled kèm dòng đếm ngược. Không hiển thị mã BR trên UI.
-6. **Nhãn vòng đời sự kiện (Đang mở / Sắp mở / Đã kết thúc) là giá trị suy ra** từ thời gian + trạng thái `active/cancelled`, không hàm ý một mốc “mở đăng ký” riêng (hệ thống không lưu mốc này).
+6. **Nhãn vòng đời sự kiện có 4 giá trị: Đang mở / Sắp mở / Đã kết thúc / Đã huỷ** ⭐ **v1.0.2** (bản trước chỉ ghi 3, thiếu “Đã huỷ” nên mỗi màn tự đặt một chữ khác nhau cho sự kiện đã huỷ). Cả 4 đều là **giá trị SUY RA** từ thời gian + trạng thái `active/cancelled`, **không phải cột CSDL**: `status = cancelled` thắng mọi so sánh thời gian ⇒ “Đã huỷ”; còn lại suy từ `start_time`/`end_time` so với hiện tại ⇒ “Sắp mở” · “Đang mở” · “Đã kết thúc”. Việc thêm “Đã huỷ” **không** hàm ý có thêm mốc thời gian nào — hệ thống vẫn **không** lưu mốc “mở đăng ký” riêng. Khớp Screen Registry v7 (badge 4 nhãn, dùng chung M4/M6) và hằng `EVENT_LIFECYCLE_LABEL` phía frontend.
 7. **Không có “Lưu nháp”** — hệ thống không có trạng thái `draft`; tạo sự kiện là xuất bản luôn ở `active`.
 8. **Quản trị — khoá công tắc vô hiệu trên dòng admin:** màn Quản lý người dùng (§4.8.1) phải khoá/ẩn công tắc bật-tắt trên dòng của chính admin và mọi dòng vai trò Quản trị (BR-121); nút “Buộc huỷ” (FR-30, §4.8.2) không hiển thị trên sự kiện đã ở trạng thái đã huỷ.
 9. **Đổi mật khẩu là màn riêng** (có back-arrow) mở từ trang Hồ sơ — chấp nhận thay cho phương án “tab Bảo mật” ở §4.2.2 (phù hợp mobile hơn).
@@ -3589,7 +3637,7 @@ Bảng dưới đây ánh xạ toàn bộ 42 FR sang các thành phần đặc t
 | **FR-29**             | Vô hiệu hoá / kích hoạt tài khoản người dùng | UC-36        | BR-79, BR-80, BR-98, BR-108, BR-121 ⭐                      | MSG-49 ⭐               | `PATCH /admin/users/:userId/status`                      | 4.8.1                    | TC-29-01→nn   |
 | **FR-30**             | Buộc huỷ sự kiện                             | UC-37        | BR-81, BR-96, BR-106                                        | MSG-34, MSG-50 ⭐      | `POST /admin/events/:eventId/force-cancel`               | 4.8.2                    | TC-30-01→nn   |
 | **FR-31**             | Đăng / sửa / xoá thông báo sự kiện           | UC-15        | BR-40, BR-41, BR-40b, BR-40c ⭐                             | —                      | `POST · PATCH · DELETE /events/:id/updates`              | 4.3.5                    | TC-31-01→nn   |
-| **FR-32**             | Quản lý lịch trình sự kiện                   | UC-16        | BR-42, BR-43                                                | —                      | `POST · PATCH · DELETE /events/:id/schedule`             | 4.3.4                    | TC-32-01→nn   |
+| **FR-32**             | Quản lý lịch trình sự kiện                   | UC-16        | BR-42, BR-43, BR-43b ⭐ (422 SCHEDULE_TIME_OUT_OF_RANGE)    | —                      | `POST · PATCH · DELETE /events/:id/schedule`             | 4.3.4                    | TC-32-01→nn   |
 | **FR-33**             | Xem hồ sơ công khai Ban tổ chức              | UC-08        | BR-26, BR-27                                                | —                      | `GET /organizers/:userId`                                | 4.2.3                    | TC-33-01→nn   |
 | **FR-34**             | Tự huỷ đăng ký                               | UC-23        | BR-55, BR-56, BR-49                                         | MSG-25, MSG-32         | `POST /registrations/:id/cancel`                         | 4.4.4                    | TC-34-01→nn   |
 | **FR-35**             | Gửi email nhắc lịch trước sự kiện            | UC-24        | BR-57, BR-97, BR-58                                         | —                      | `(worker) gửi email nhắc lịch`                           | — (nền)                  | TC-35-01→nn   |

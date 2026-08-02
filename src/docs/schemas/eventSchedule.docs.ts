@@ -11,17 +11,26 @@ import { uuid, dateTime } from './common.docs';
 const dateTimeInput = (description: string) =>
   z.coerce.date().openapi({ type: 'string', format: 'date-time', description });
 
+// BR-43b: mô tả dùng chung cho cả body tạo lẫn body sửa
+const START_TIME_BOUND =
+  'BR-43b: phải nằm trong `[event.start_time, event.end_time]` — BIÊN ĐÓNG, bằng đúng hai mốc ' +
+  'là hợp lệ. Ngoài khoảng → 422 `SCHEDULE_TIME_OUT_OF_RANGE`.';
+
 export const createScheduleItemBodySchema = registry.register(
   'CreateScheduleItemBody',
   createEventScheduleSchema.safeExtend({
-    start_time: dateTimeInput('Thời điểm bắt đầu mốc lịch trình, ISO-8601.'),
+    start_time: dateTimeInput(
+      `Thời điểm bắt đầu mốc lịch trình, ISO-8601. ${START_TIME_BOUND}`
+    ),
   })
 );
 
 export const updateScheduleItemBodySchema = registry.register(
   'UpdateScheduleItemBody',
   updateEventScheduleSchema.safeExtend({
-    start_time: dateTimeInput('Thời điểm bắt đầu mốc lịch trình.').optional(),
+    start_time: dateTimeInput(
+      `Thời điểm bắt đầu mốc lịch trình. ${START_TIME_BOUND} Không gửi khoá này thì KHÔNG bị kiểm.`
+    ).optional(),
   })
 );
 

@@ -1,7 +1,34 @@
 # THIẾT KẾ API — UniEvent Flow
 
 _Tài liệu đặc tả REST API — dùng làm API contract giữa Backend (Quang) và Frontend (Dũng)_
-_Phiên bản: **1.1.0** — Dựa trên SRS v1.0.1 (FR-01 → FR-42, 42 UC, 127 BR), ERD.md v1.0.0 và SCHEMA.sql v1.0.0_
+_Phiên bản: **1.1.2** — Dựa trên SRS v1.0.3 (FR-01 → FR-42, 42 UC, 128 BR), ERD.md v1.0.0 và SCHEMA.sql v1.0.0_
+
+> ## 🩹 v1.1.2 — `SCHEDULE_TIME_OUT_OF_RANGE` ĐÃ HIỆN THỰC (02/08/2026)
+>
+> **PATCH.** Không thêm/bớt endpoint (vẫn **51 REST + `/health` = 52 operation**), không đổi
+> request/response shape, **không đụng SCHEMA/ERD** (0 dòng thay đổi).
+>
+> **Mã lỗi `SCHEDULE_TIME_OUT_OF_RANGE` (422) nay đã chạy thật** ở `POST` và `PATCH
+> /events/:eventId/schedule`, và **đã có trong `/api-docs.json`** ⇒ `npm run gen:api` phía frontend
+> sinh được nhánh này. **Frontend gỡ được phép chặn tạm ở client** đã dựng khi mã lỗi mới chỉ nằm
+> trên giấy. Hành vi: biên **ĐÓNG** (bằng đúng `event.start_time` hoặc `event.end_time` là hợp lệ);
+> PATCH chỉ kiểm khi body có gửi `start_time`.
+>
+> Hai khối cảnh báo "⚠️ chưa hiện thực" của v1.1.1 đã gỡ. Nghiệm thu: `npm run smoke`
+> **104/104 PASS** (thêm 5 ca biên BR-43b + 3 ca chống rò `jwt_code`), `check:openapi` **66/66**.
+
+> ## 🩹 v1.1.1 — BỔ SUNG MÃ LỖI `SCHEDULE_TIME_OUT_OF_RANGE` (02/08/2026)
+>
+> **PATCH.** Không thêm/bớt endpoint (vẫn **51 REST + `/health` = 52 operation**), không đổi
+> request/response shape của bất kỳ endpoint nào, **không đụng SCHEMA/ERD** (0 dòng thay đổi).
+>
+> 1. **§3.2 — thêm `SCHEDULE_TIME_OUT_OF_RANGE` (422)** cho `POST` và `PATCH
+>    /events/:eventId/schedule`: `start_time` của mốc lịch trình phải nằm trong
+>    `[event.start_time, event.end_time]`. Nguồn nghiệp vụ: **SRS BR-43b** (mới ở SRS v1.0.2,
+>    BR 127 → 128).
+>
+> Tại thời điểm chốt v1.1.1 đây là mã lỗi **đặc tả đi trước mã nguồn**; backend đã hiện thực ở
+> **v1.1.2**. Toàn bộ phần còn lại của contract v1.1.0 giữ nguyên hiệu lực.
 
 > ## 📐 v1.1.0 — ĐỒNG BỘ NGƯỢC TỪ FRONTEND (01/08/2026)
 >
@@ -380,11 +407,13 @@ Frontend chạy trên origin khác backend nên **bắt buộc** bật CORS, n�
 | Method | Endpoint                                | Auth                                      | Mô tả                                                                                                                                                                 |
 | ------ | --------------------------------------- | ----------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | GET    | `/events/:eventId/schedule`             | Public                                    | 200 danh sách mốc lịch trình, sắp theo `sort_order` (cũng đã nhúng sẵn trong `GET /events/:eventId`, endpoint riêng dùng khi cần tải lại độc lập, ví dụ sau khi edit) |
-| POST   | `/events/:eventId/schedule`             | Organizer + **Owner-or-CoHost** ⭐ v0.3.0 | Body: `{start_time, title, location?, sort_order?}` ⭐ **casing sửa v0.5.0** → 201 `{schedule_item}`. Dùng `requireOwnerOrCoHost` (SRS BR-42)                                                     |
-| PATCH  | `/events/:eventId/schedule/:scheduleId` | Organizer + **Owner-or-CoHost** ⭐ v0.3.0 | 200 `{schedule_item}` ⭐ **casing sửa v1.0.0** (bản trước ghi sót `{scheduleItem}`)                                                                                    |
+| POST   | `/events/:eventId/schedule`             | Organizer + **Owner-or-CoHost** ⭐ v0.3.0 | Body: `{start_time, title, location?, sort_order?}` ⭐ **casing sửa v0.5.0** → 201 `{schedule_item}`. Dùng `requireOwnerOrCoHost` (SRS BR-42). ⭐ **v1.1.1**: `start_time` phải nằm trong `[event.start_time, event.end_time]` (SRS BR-43b) |
+| PATCH  | `/events/:eventId/schedule/:scheduleId` | Organizer + **Owner-or-CoHost** ⭐ v0.3.0 | 200 `{schedule_item}` ⭐ **casing sửa v1.0.0** (bản trước ghi sót `{scheduleItem}`). ⭐ **v1.1.1**: nếu body có `start_time` thì cũng phải nằm trong khung giờ sự kiện (SRS BR-43b) |
 | DELETE | `/events/:eventId/schedule/:scheduleId` | Organizer + **Owner-or-CoHost** ⭐ v0.3.0 | 204                                                                                                                                                                   |
 
 **Lỗi đặc thù nhóm này:** `SCHEDULE_ITEM_NOT_FOUND` (404 ⭐ **bổ sung tài liệu v1.0.0**) — `scheduleId` không tồn tại **hoặc không thuộc đúng `eventId`**. Mã này đã có trong mã nguồn từ trước nhưng chưa từng được ghi vào tài liệu, nên frontend không biết để rẽ nhánh. Cùng nguyên tắc với `UPDATE_NOT_FOUND` ở §3.3: dùng 404 thay vì 403 khi truy cập tài nguyên con của sự kiện khác, để không lộ sự tồn tại của bản ghi.
+
+`SCHEDULE_TIME_OUT_OF_RANGE` (422 ⭐ **mới v1.1.1**) — `start_time` của mốc lịch trình nằm ngoài khung giờ của sự kiện, tức ngoài `[event.start_time, event.end_time]` (hai đầu mút được chấp nhận). Áp dụng cho cả `POST` và `PATCH` (PATCH chỉ kiểm khi body có `start_time`). Nguồn nghiệp vụ: **SRS BR-43b**. Không phải `VALIDATION_ERROR` — đúng nguyên tắc §1.3 (v0.4.7): vi phạm ràng buộc trên **giá trị** phải có mã riêng. Giá trị vẫn là mốc thời gian hợp lệ về định dạng, chỉ sai **so với sự kiện đang thao tác** — frontend cần rẽ nhánh riêng để chỉ đúng vào ô nhập thời gian kèm khung giờ hợp lệ, thay vì hiện lỗi định dạng chung.
 
 ### 3.3 Thông báo sự kiện — FR-31 ⭐ mới
 

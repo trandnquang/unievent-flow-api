@@ -1,3 +1,4 @@
+import { prisma } from '../config/db';
 import { redis } from '../config/redis';
 import {
   COUNTER_NOT_INITIALIZED,
@@ -92,5 +93,68 @@ export class TicketCounterService {
   // BR-96: không hoàn vé, khoá đếm để tự hết hạn/bỏ qua.
   public static async deleteTicketCounter(eventId: string): Promise<void> {
     await redis.del(ticketCounterKey(eventId));
+  }
+
+  // NFR-27: dựng lại các bộ đếm vé bị thiếu, chạy lúc khởi động API (xem src/server.ts).
+  //
+  // Vì sao cần: initTicketCounter ở FR-08 là BEST-EFFORT (lỗi Redis chỉ ghi log, sự kiện vẫn
+  // nằm trong PostgreSQL), Redis có thể restart không bật persistence, và nhánh BR-90 khi khoá
+  // đã mất cũng chỉ log chứ không dựng lại. Ba nguồn trôi này để lại sự kiện 'active' không có
+  // bộ đếm — đường ĐỌC vẫn chạy nhờ fallback view, nhưng đường GHI hard-fail 500 ở
+  // decrementTicket cho MỌI lượt đăng ký. Routine này đóng khoảng trống đó.
+  //
+  // Idempotent: chạy lại nhiều lần không đổi kết quả, không có bộ đếm thiếu thì không ghi gì.
+  public static async reconcileMissingCounters(): Promise<number> {
+    // Chỉ sự kiện 'active'. Enum event_status chỉ có 'active' | 'cancelled' (schema.sql:183) —
+    // KHÔNG có 'draft'. Sự kiện đã huỷ cố tình bỏ qua theo BR-96 (không hoàn vé, bỏ khoá đếm).
+    const activeEvents = await prisma.events.findMany({
+      where: { status: 'active' },
+      select: { id: true },
+    });
+
+    if (activeEvents.length === 0) return 0;
+
+    const eventIds = activeEvents.map((event) => event.id);
+    const remainingMap = await this.getRemainingMap(eventIds);
+    const missing = eventIds.filter((id) => remainingMap[id] === null);
+
+    // Khởi động sạch thì im lặng — chỉ nói khi thật sự có việc phải làm
+    if (missing.length === 0) return 0;
+
+    // View v_event_registration_stats KHÔNG có trong schema.prisma (CLAUDE.md bất biến #2)
+    // nên BẮT BUỘC dùng $queryRaw. Cột tickets_remaining_db đã chính là công thức cần dùng:
+    // max_tickets − COUNT(confirmed) − COUNT(pending) (schema.sql:483-503).
+    const stats = await prisma.$queryRaw<
+      Array<{ event_id: string; tickets_remaining_db: bigint | number }>
+    >`
+      SELECT event_id, tickets_remaining_db
+      FROM v_event_registration_stats
+      WHERE event_id = ANY(${missing}::uuid[])
+    `;
+
+    if (stats.length === 0) return 0;
+
+    // ⚠️ SET NX, KHÔNG PHẢI SET ĐÈ. Giữa lúc quét và lúc ghi có thể có request đăng ký vừa
+    // DECR thành công trên khoá vừa được tạo; SET đè sẽ xoá mất lượt giữ chỗ đó và phát vé
+    // vượt max_tickets. NX cũng làm routine an toàn khi lỡ chạy song song ở hai tiến trình.
+    const pipeline = redis.pipeline();
+    for (const row of stats) {
+      const remaining = Math.max(0, Number(row.tickets_remaining_db));
+      pipeline.set(ticketCounterKey(row.event_id), remaining, 'NX');
+    }
+    const outcomes = await pipeline.exec();
+
+    // Redis trả 'OK' khi NX ghi được, null khi khoá đã có (ai đó dựng trước trong lúc quét)
+    const restored = (outcomes ?? []).filter(
+      ([error, value]) => error === null && value === 'OK'
+    ).length;
+
+    if (restored > 0) {
+      console.log(
+        `♻️  [INFO] Đã dựng lại ${restored} bộ đếm vé Redis từ view v_event_registration_stats (NFR-27)`
+      );
+    }
+
+    return restored;
   }
 }

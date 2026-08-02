@@ -34,6 +34,13 @@ const envSchema = z.object({
   APP_TICKET_URL: z.string().default('http://localhost:5173/tickets'),
   // Trang đăng nhập phía FE - email cấp tài khoản Ban tổ chức (FR-38) trỏ về đây
   APP_LOGIN_URL: z.string().default('http://localhost:5173/login'),
+  // Logo hiển thị ở đầu mọi email. URL TUYỆT ĐỐI (ảnh không đi kèm thư).
+  // Nhất quán BR-111: ứng dụng KHÔNG lưu tệp nhị phân, chỉ giữ URL.
+  // Để rỗng -> khung email tự rơi về wordmark chữ, KHÔNG để lại <img> gãy.
+  // Lưu ý: Gmail/Outlook chặn ảnh ngoài mặc định nên người nhận thấy alt text cho tới khi bấm
+  // "hiển thị ảnh" — chấp nhận được vì ảnh BẮT BUỘC phải thấy là mã QR vé, và ảnh đó dùng
+  // Content-ID đính kèm (BR-51) chứ không phải URL ngoài.
+  APP_LOGO_URL: z.string().default(''),
   // BR-57: job nhắc lịch chạy trước start_time N giờ (N cấu hình được)
   REMINDER_LEAD_TIME_HOURS: z.coerce.number().int().positive().default(24),
   // BR-98 (CBR 7): cache trạng thái tài khoản trên Redis để requireActive không phải

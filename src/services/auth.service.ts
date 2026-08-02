@@ -111,8 +111,12 @@ export class AuthService {
 
   // Yêu cầu quên mật khẩu (FR-07)
   public static async forgotPassword(input: ForgotPasswordInput): Promise<void> {
+    // `select` tường minh: hàm này không cần password_hash/reset_token nên không nạp chúng
+    // lên bộ nhớ. Cả ba hàm mật khẩu ở dưới đều trả Promise<void> nên hôm nay không rò gì,
+    // nhưng nạp sẵn dữ liệu nhạy cảm rồi trông chờ "sẽ không ai return user" là mong manh.
     const user = await prisma.users.findUnique({
       where: { email: input.email },
+      select: { id: true, email: true, name: true, is_active: true },
     });
 
     // Luôn xử lý thành công không tiết lộ email có tồn tại hay không (chống dò tài khoản)
@@ -153,6 +157,7 @@ export class AuthService {
       where: {
         reset_token: input.token,
       },
+      select: { id: true, reset_token_expires: true },
     });
 
     if (
@@ -185,8 +190,10 @@ export class AuthService {
     userId: string,
     input: ChangePasswordInput
   ): Promise<void> {
+    // password_hash BẮT BUỘC phải nạp ở đây (bcrypt.compare cần) — nhưng reset_token thì không
     const user = await prisma.users.findUnique({
       where: { id: userId },
+      select: { id: true, password_hash: true },
     });
 
     if (!user) {
